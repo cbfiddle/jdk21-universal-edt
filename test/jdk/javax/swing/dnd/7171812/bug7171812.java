@@ -57,8 +57,8 @@ public class bug7171812 {
     public static void main(String[] args) throws Exception{
 
         Robot robot = new Robot();
-        robot.setAutoDelay(100);
-        robot.setAutoWaitForIdle(true);
+        robot.setAutoDelay(10);
+        //robot.setAutoWaitForIdle(true);
 
         SwingUtilities.invokeAndWait(new Runnable() {
             @Override

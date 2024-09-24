@@ -59,6 +59,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
+import java.lang.reflect.InvocationTargetException;
 
 /*
   @test
@@ -122,7 +123,7 @@ public class MozillaDnDTest {
             frame.pack();
             frame.setVisible(true);
 
-            Util.waitForInit();
+            Util.invokeAndWait(() -> Util.waitForInit());
 
             Point sourcePoint = panel.getLocationOnScreen();
             Dimension d = panel.getSize();
@@ -178,8 +179,8 @@ public class MozillaDnDTest {
             return;
         }
         try {
-            Util.waitForInit();
             EventQueue.invokeAndWait(() -> {
+                Util.waitForInit();
                 p = panel.getLocationOnScreen();
                 d = panel.getSize();
             });
@@ -286,21 +287,35 @@ class Util implements AWTEventListener {
         return c == comp;
     }
 
-    public static void waitForInit() throws InterruptedException {
-        final Frame f = new Frame() {
-                public void paint(Graphics g) {
-                    dispose();
-                    synchronized (SYNC_LOCK) {
-                        SYNC_LOCK.notifyAll();
-                    }
-                }
-            };
-        f.setBounds(600, 400, 200, 200);
-        synchronized (SYNC_LOCK) {
-            f.setVisible(true);
-            SYNC_LOCK.wait(PAINT_TIMEOUT);
+    public static void invokeAndWait(Runnable r) {
+        try {
+            EventQueue.invokeAndWait(r);
+        } catch (InterruptedException e) {
+            throw new RuntimeException("Interrupted!");
+        } catch (InvocationTargetException e) {
+            throw new RuntimeException("Exception: " + e.getTargetException());
         }
-        tk.sync();
+    }
+
+    public static void waitForInit() {
+        try {
+            final Frame f = new Frame() {
+                    public void paint(Graphics g) {
+                        dispose();
+                        synchronized (SYNC_LOCK) {
+                            SYNC_LOCK.notifyAll();
+                        }
+                    }
+                };
+            f.setBounds(600, 400, 200, 200);
+            synchronized (SYNC_LOCK) {
+                f.setVisible(true);
+                SYNC_LOCK.wait(PAINT_TIMEOUT);
+            }
+            tk.sync();
+        } catch (InterruptedException e) {
+            throw new RuntimeException("Interrupted!");
+        }
     }
 }
 

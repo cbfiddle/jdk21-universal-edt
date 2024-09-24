@@ -46,14 +46,23 @@ import java.util.ResourceBundle;
 public class WindowTest {
 
     public static void main(String args[]) throws Exception {
-        Frame frame  = new Frame();
-        frame.setSize(200,200);
-        frame.setVisible(true);
         try {
-            doTest(frame);
-        } finally {
-            frame.setVisible(false);
-            frame.dispose();
+            java.awt.EventQueue.invokeAndWait(() -> {
+                Frame frame  = new Frame();
+                frame.setSize(200,200);
+                frame.setVisible(true);
+                try {
+                    doTest(frame);
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                } finally {
+                    frame.setVisible(false);
+                    frame.dispose();
+                }
+            });
+        } catch (InterruptedException e) {
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            System.err.println("Error: " + e.getTargetException());
         }
     }
 

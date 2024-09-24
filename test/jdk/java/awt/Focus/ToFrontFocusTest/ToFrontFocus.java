@@ -42,8 +42,22 @@ public class ToFrontFocus {
 
     public static void main(final String[] args) {
         ToFrontFocus app = new ToFrontFocus();
-        app.init();
-        app.start();
+        try {
+            EventQueue.invokeAndWait(() -> {
+                try {
+                    app.init();
+                    app.start();
+                } catch (Exception e) {
+                    System.err.println("test failed: " + e);
+                    e.printStackTrace();
+                    throw new RuntimeException(e.getMessage());
+                }
+            });
+        } catch (Exception e) {
+            System.err.println("invokeAndWait failed: " + e);
+            e.printStackTrace();
+            throw new RuntimeException(e);
+        }
     }
 
     public void init()

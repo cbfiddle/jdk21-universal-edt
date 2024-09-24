@@ -304,8 +304,8 @@ class WaitDispatchSupport implements SecondaryLoop {
         return false;
     }
 
-    private static final Object getTreeLock() {
-        return Component.LOCK;
+    private static Object getTreeLock() {
+        return Component.getSharedTreeLock("WaitDispatchSupport");
     }
 
     private final Runnable wakingRunnable = new Runnable() {

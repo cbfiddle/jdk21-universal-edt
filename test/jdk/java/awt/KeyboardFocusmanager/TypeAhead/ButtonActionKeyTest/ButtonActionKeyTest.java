@@ -71,7 +71,7 @@ public class ButtonActionKeyTest {
         text.addKeyListener(new KeyAdapter() {
                 public void keyTyped(KeyEvent e) {
                     if (e.getKeyChar() == 'a') {
-                        System.out.println(e.toString());
+                        System.out.println("Text event: " + e.toString());
                         synchronized (gotEvent) {
                             gotEvent.set(true);
                             gotEvent.notifyAll();

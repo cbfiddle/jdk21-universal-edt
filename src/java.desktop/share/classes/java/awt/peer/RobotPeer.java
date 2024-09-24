@@ -127,4 +127,16 @@ public interface RobotPeer
     default boolean useAbsoluteCoordinates() {
         return false;
     }
+
+    /**
+     * Delay the current thread for the specified duration. If invoked on the toolkit thread, toolkit event processing
+     * should not be suspended.
+     * @param ms The duration in milliseconds.
+     * @throws InterruptedException if any thread has interrupted the current thread.
+     */
+
+    default void sleep(long ms) throws InterruptedException
+    {
+        Thread.sleep(ms);
+    }
 }

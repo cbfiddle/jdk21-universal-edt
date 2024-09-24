@@ -34,22 +34,36 @@ import java.awt.MenuBar;
 public final class RemoveHelpMenu {
 
     public static void main(final String[] args) {
-        final Frame frame = new Frame("RemoveHelpMenu Test");
         try {
-            frame.pack();
-            // peer exists
-            test1(getMenuBar(frame));
-            test2(getMenuBar(frame));
-            test3(getMenuBar(frame));
-            test4(getMenuBar(frame));
-        } finally {
-            frame.dispose();
+            java.awt.EventQueue.invokeAndWait(() -> {
+                try {
+                    final Frame frame = new Frame("RemoveHelpMenu Test");
+                    try {
+                        frame.pack();
+                        // peer exists
+                        test1(getMenuBar(frame));
+                        test2(getMenuBar(frame));
+                        test3(getMenuBar(frame));
+                        test4(getMenuBar(frame));
+                    } finally {
+                        frame.dispose();
+                    }
+                    // peer is null
+                    test1(getMenuBar(frame));
+                    test2(getMenuBar(frame));
+                    test3(getMenuBar(frame));
+                    test4(getMenuBar(frame));
+                } catch (Exception e) {
+                    System.err.println("test failed: " + e);
+                    e.printStackTrace();
+                    throw new RuntimeException(e.getMessage());
+                }
+            });
+        } catch (Exception e) {
+            System.err.println("invokeAndWait failed: " + e);
+            e.printStackTrace();
+            throw new RuntimeException(e);
         }
-        // peer is null
-        test1(getMenuBar(frame));
-        test2(getMenuBar(frame));
-        test3(getMenuBar(frame));
-        test4(getMenuBar(frame));
     }
 
     private static MenuBar getMenuBar(final Frame frame) {

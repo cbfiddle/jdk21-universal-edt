@@ -131,7 +131,7 @@ class SequencedEvent extends AWTEvent implements ActiveEvent {
         SunToolkit.setSystemGenerated(nested);
 
         if (fxAppThreadIsDispatchThread) {
-            fxCheckSequenceThread = new Thread() {
+            fxCheckSequenceThread = new Thread("SequencedEvent") {
                 @Override
                 public void run() {
                     while(!isFirstOrDisposed()) {
@@ -167,25 +167,22 @@ class SequencedEvent extends AWTEvent implements ActiveEvent {
 
             if (getFirst() != this) {
                 if (EventQueue.isDispatchThread()) {
-                    if (Thread.currentThread() instanceof EventDispatchThread) {
-                        EventDispatchThread edt = (EventDispatchThread)
-                                Thread.currentThread();
+                    if (fxAppThreadIsDispatchThread) {
+                        fxCheckSequenceThread.start();
+                        try {
+                            // check if event is dispatched or disposed
+                            // but since this user app thread is same as
+                            // dispatch thread in fx when run with
+                            // javafx.embed.singleThread=true
+                            // we do not wait infinitely to avoid deadlock
+                            // as dispatch will ultimately be done by this thread
+                            fxCheckSequenceThread.join(500);
+                        } catch (InterruptedException ignore) {
+                        }
+                    } else {
+                        EventDispatchThread edt = Toolkit.getEventQueue().getDispatchThread();
                         edt.pumpEventsForFilter(() -> !SequencedEvent.this.isFirstOrDisposed(),
                                 new SequencedEventsFilter(this));
-                    } else {
-                        if (fxAppThreadIsDispatchThread) {
-                            fxCheckSequenceThread.start();
-                            try {
-                                // check if event is dispatched or disposed
-                                // but since this user app thread is same as
-                                // dispatch thread in fx when run with
-                                // javafx.embed.singleThread=true
-                                // we do not wait infinitely to avoid deadlock
-                                // as dispatch will ultimately be done by this thread
-                                fxCheckSequenceThread.join(500);
-                            } catch (InterruptedException e) {
-                            }
-                        }
                     }
                 } else {
                     while(!isFirstOrDisposed()) {

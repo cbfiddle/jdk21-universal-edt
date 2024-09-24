@@ -51,6 +51,9 @@ final class CWrapper {
         static native boolean canBecomeMainWindow(long window);
         static native boolean isKeyWindow(long window);
 
+        static native void runModal(long window);  // blocks
+        static native void stopModal();
+
         static native void orderFront(long window);
         static native void orderFrontRegardless(long window);
         static native void orderWindow(long window, int ordered, long relativeTo);

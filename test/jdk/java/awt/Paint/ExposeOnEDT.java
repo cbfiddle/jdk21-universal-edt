@@ -186,20 +186,29 @@ public final class ExposeOnEDT {
         frame.setVisible(true);
         sleep();
 
-        frame.add(buttonStub);
-        frame.add(canvasStub);
-        frame.add(checkboxStub);
-        frame.add(choiceStub);
-        frame.add(lwComponentStub);
-        frame.add(containerStub);
-        frame.add(labelStub);
-        frame.add(listStub);
-        frame.add(panelStub);
-        frame.add(scrollbarStub);
-        frame.add(scrollPaneStub);
-        frame.add(textAreaStub);
-        frame.add(textFieldStub);
-        frame.validate();
+        try {
+            EventQueue.invokeAndWait(() -> {
+                frame.add(buttonStub);
+                frame.add(canvasStub);
+                frame.add(checkboxStub);
+                frame.add(choiceStub);
+                frame.add(lwComponentStub);
+                frame.add(containerStub);
+                frame.add(labelStub);
+                frame.add(listStub);
+                frame.add(panelStub);
+                frame.add(scrollbarStub);
+                frame.add(scrollPaneStub);
+                frame.add(textAreaStub);
+                frame.add(textFieldStub);
+                frame.validate();
+            });
+        } catch (Exception e) {
+            System.err.println("invokeAndWait failed: " + e);
+            e.printStackTrace();
+            throw new RuntimeException(e);
+        }
+
         sleep();
 
         // Force expose event from the native system.

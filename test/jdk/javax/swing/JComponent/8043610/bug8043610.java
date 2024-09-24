@@ -47,13 +47,8 @@ public class bug8043610 {
         ThreadGroup stubTG = new ThreadGroup(getRootThreadGroup(), "Stub Thread Group");
         ThreadGroup swingTG = new ThreadGroup(getRootThreadGroup(), "SwingTG");
         try {
-            Thread stubThread = new Thread(stubTG, SunToolkit::createNewAppContext);
-            stubThread.start();
-            stubThread.join();
-
             CountDownLatch startSwingLatch = new CountDownLatch(1);
             new Thread(swingTG, () -> {
-                SunToolkit.createNewAppContext();
                 SwingUtilities.invokeLater(() -> {
                     frame = new JFrame();
                     component = new JLabel("Test Text");

@@ -70,7 +70,7 @@ public class SkipDropCompleteTest {
             InvocationTargetException {
         try {
             Robot robot = new Robot();
-            robot.setAutoWaitForIdle(true);
+            //robot.setAutoWaitForIdle(true);
             robot.delay(1000);
             robot.mouseMove(sourceLoc.x, sourceLoc.y);
             robot.mousePress(InputEvent.BUTTON1_DOWN_MASK);

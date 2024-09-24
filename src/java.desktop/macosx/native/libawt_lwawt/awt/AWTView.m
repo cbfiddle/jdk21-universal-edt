@@ -341,6 +341,10 @@ static BOOL shouldUsePressAndHold() {
  */
 
 -(void) deliverJavaMouseEvent: (NSEvent *) event {
+
+    // debug
+    // NSLog(@"Mouse event delivered to AWTView: %@", event);
+
     BOOL isEnabled = YES;
     NSWindow* window = [self window];
     if ([window isKindOfClass: [AWTWindow_Panel class]] || [window isKindOfClass: [AWTWindow_Normal class]]) {

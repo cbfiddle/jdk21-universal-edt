@@ -33,6 +33,7 @@ import java.awt.peer.DialogPeer;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.Serial;
+import java.lang.reflect.InvocationTargetException;
 import java.security.AccessControlException;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
@@ -1043,6 +1044,20 @@ public class Dialog extends Window {
         }
 
         beforeFirstShow = false;
+        if (!EventQueue.isDispatchThread()) {
+            try {
+                EventQueue.invokeAndWait(this::internalShow);
+            } catch (InterruptedException e) {
+                System.err.println("Dialog.show interrupted");
+            } catch (InvocationTargetException e) {
+                System.err.println("Dialog.show failed: " + e.getTargetException());
+            }
+        } else {
+            internalShow();
+        }
+    }
+
+    private void internalShow() {
         if (!isModal()) {
             conditionalShow(null, null);
         } else {
@@ -1051,9 +1066,16 @@ public class Dialog extends Window {
             AtomicLong time = new AtomicLong();
             Component predictedFocusOwner = null;
             try {
+
+                // Need to create the secondary loop now, because showing the dialog will execute client code,
+                // which may hide or dispose the Dialog.
+
+                modalFilter = ModalEventFilter.createFilterForDialog(this);
+                EventQueue thisEventQueue = (EventQueue)appContext.get(AppContext.EVENT_QUEUE_KEY);
+                secondaryLoop = thisEventQueue.createSecondaryLoop(() -> true, modalFilter, 0);
+
                 predictedFocusOwner = getMostRecentFocusOwner();
                 if (conditionalShow(predictedFocusOwner, time)) {
-                    modalFilter = ModalEventFilter.createFilterForDialog(this);
                     // if this dialog is toolkit-modal, the filter should be added
                     // to all EDTs (for all AppContexts)
                     if (modalityType == ModalityType.TOOLKIT_MODAL) {
@@ -1061,9 +1083,9 @@ public class Dialog extends Window {
                             if (appContext == showAppContext) {
                                 continue;
                             }
-                            EventQueue eventQueue = (EventQueue)appContext.get(AppContext.EVENT_QUEUE_KEY);
                             // it may occur that EDT for appContext hasn't been started yet, so
                             // we post an empty invocation event to trigger EDT initialization
+                            EventQueue eventQueue = (EventQueue)appContext.get(AppContext.EVENT_QUEUE_KEY);
                             eventQueue.postEvent(new InvocationEvent(this, () -> {}));
                             EventDispatchThread edt = eventQueue.getDispatchThread();
                             edt.addEventFilter(modalFilter);
@@ -1072,13 +1094,11 @@ public class Dialog extends Window {
 
                     modalityPushed();
                     try {
-                        @SuppressWarnings("removal")
-                        final EventQueue eventQueue = AccessController.doPrivileged(
-                                (PrivilegedAction<EventQueue>) Toolkit.getDefaultToolkit()::getSystemEventQueue);
-                        secondaryLoop = eventQueue.createSecondaryLoop(() -> true, modalFilter, 0);
-                        if (!secondaryLoop.enter()) {
+                        if (secondaryLoop != null && !secondaryLoop.enter()) {
                             secondaryLoop = null;
                         }
+                    } catch (NullPointerException ignore) {
+                        // in case of a race condition that clears secondaryLoop at an inconvenient time
                     } finally {
                         modalityPopped();
                     }

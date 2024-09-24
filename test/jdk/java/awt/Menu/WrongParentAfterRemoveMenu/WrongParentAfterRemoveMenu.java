@@ -35,9 +35,23 @@ import java.awt.Window;
 public final class WrongParentAfterRemoveMenu {
 
     public static void main(final String[] args) {
-        testMenuBar();
-        testComponent();
-        testFrame();
+        try {
+            java.awt.EventQueue.invokeAndWait(() -> {
+                try {
+                    testMenuBar();
+                    testComponent();
+                    testFrame();
+                } catch (Exception e) {
+                    System.err.println("test failed: " + e);
+                    e.printStackTrace();
+                    throw new RuntimeException(e.getMessage());
+                }
+            });
+        } catch (Exception e) {
+            System.err.println("invokeAndWait failed: " + e);
+            e.printStackTrace();
+            throw new RuntimeException(e);
+        }
     }
 
     private static void testFrame() {

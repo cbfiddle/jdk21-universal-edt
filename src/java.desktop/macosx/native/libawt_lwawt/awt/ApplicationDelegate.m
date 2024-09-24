@@ -732,7 +732,7 @@ JNIEXPORT void JNICALL Java_com_apple_eawt__1AppMiscHandlers_nativeRequestActiva
 {
 JNI_COCOA_ENTER(env);
 
-    [ThreadUtilities performOnMainThreadWaiting:NO block:^(){
+    [ThreadUtilities performOnMainThreadLater:^(){
         NSApplicationActivationOptions options = allWindows ? NSApplicationActivateAllWindows : 0;
         options |= NSApplicationActivateIgnoringOtherApps; // without this, nothing happens!
         [[NSRunningApplication currentApplication] activateWithOptions:options];
@@ -751,7 +751,7 @@ JNIEXPORT void JNICALL Java_com_apple_eawt__1AppMiscHandlers_nativeRequestUserAt
 {
 JNI_COCOA_ENTER(env);
 
-    [ThreadUtilities performOnMainThreadWaiting:NO block:^(){
+    [ThreadUtilities performOnMainThreadLater:^(){
         [NSApp requestUserAttention:critical ? NSCriticalRequest : NSInformationalRequest];
     }];
 

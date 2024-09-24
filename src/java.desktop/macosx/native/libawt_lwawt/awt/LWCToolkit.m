@@ -36,6 +36,7 @@
 #import  "NSApplicationAWT.h"
 #import "PropertiesUtilities.h"
 #import "ApplicationDelegate.h"
+#import "AWTEventDispatchRunLoopSource.h"
 
 #import "sun_lwawt_macosx_LWCToolkit.h"
 
@@ -66,6 +67,9 @@ static BOOL isEmbedded = NO;
 static BOOL sAppKitStarted = NO;
 static pthread_mutex_t sAppKitStarted_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t sAppKitStarted_cv = PTHREAD_COND_INITIALIZER;
+
+static jobject runLoopDispatcher;
+static AWTEventDispatchRunLoopSource *runLoopSource;
 
 @implementation AWTToolkit
 
@@ -183,7 +187,7 @@ static BOOL inDoDragDropLoop;
 }
 
 - (void)perform {
-    JNIEnv* env = [ThreadUtilities getJNIEnvUncached];
+    JNIEnv* env = [ThreadUtilities getJNIEnv];
     DECLARE_CLASS(sjc_Runnable, "java/lang/Runnable");
     DECLARE_METHOD(jm_Runnable_run, sjc_Runnable, "run", "()V");
     (*env)->CallVoidMethod(env, self.runnable, jm_Runnable_run);
@@ -424,6 +428,49 @@ static void AWT_NSUncaughtExceptionHandler(NSException *exception) {
 
 /*
  * Class:     sun_lwawt_macosx_LWCToolkit
+ * Method:    nativeDispatchEventsNow
+ * Signature: ()V
+ */
+JNIEXPORT void JNICALL Java_sun_lwawt_macosx_LWCToolkit_nativeDispatchEventsNow
+(JNIEnv *env, jclass clz)
+{
+    if (runLoopDispatcher) {
+        [ThreadUtilities performOnMainThreadWaiting:YES block:^(){
+            JNIEnv* env = [ThreadUtilities getJNIEnv];
+            DECLARE_CLASS(sjc_Runnable, "java/lang/Runnable");
+            DECLARE_METHOD(jm_Runnable_run, sjc_Runnable, "run", "()V");
+            (*env)->CallVoidMethod(env, runLoopDispatcher, jm_Runnable_run);
+            CHECK_EXCEPTION();
+        }];
+    }
+}
+
+/*
+ * Class:     sun_lwawt_macosx_LWCToolkit
+ * Method:    nativeCreateRunLoopSource
+ * Signature: (Ljava/lang/Runnable;)V
+ */
+JNIEXPORT void JNICALL Java_sun_lwawt_macosx_LWCToolkit_nativeCreateRunLoopSource
+(JNIEnv *env, jclass clz, jobject runnable)
+{
+    runLoopDispatcher = (*env)->NewGlobalRef(env, runnable);
+    runLoopSource = [[AWTEventDispatchRunLoopSource alloc] init:runLoopDispatcher];
+    [runLoopSource addToCurrentRunLoop];
+}
+
+/*
+ * Class:     sun_lwawt_macosx_LWCToolkit
+ * Method:    nativeSignalRunLoopSource
+ * Signature: ()V
+ */
+JNIEXPORT void JNICALL Java_sun_lwawt_macosx_LWCToolkit_nativeSignalRunLoopSource
+(JNIEnv *env, jclass clz)
+{
+    [ThreadUtilities performOnMainThread:@selector(announceReady) on:runLoopSource withObject:nil waitUntilDone:NO];
+}
+
+/*
+ * Class:     sun_lwawt_macosx_LWCToolkit
  * Method:    nativeSyncQueue
  * Signature: (J)Z
  */
@@ -435,24 +482,10 @@ JNIEXPORT jboolean JNICALL Java_sun_lwawt_macosx_LWCToolkit_nativeSyncQueue
     NSApplication* sharedApp = [NSApplication sharedApplication];
     if ([sharedApp isKindOfClass:[NSApplicationAWT class]]) {
         NSApplicationAWT* theApp = (NSApplicationAWT*)sharedApp;
-        // We use two different API to post events to the application,
-        //  - [NSApplication postEvent]
-        //  - CGEventPost(), see CRobot.m
-        // It was found that if we post an event via CGEventPost in robot and
-        // immediately after this we will post the second event via
-        // [NSApp postEvent] then sometimes the second event will be handled
-        // first. The opposite isn't proved, but we use both here to be safer.
-
         // If the native drag is in progress, skip native sync.
         if (!AWTToolkit.inDoDragDropLoop) {
-            [theApp postDummyEvent:false];
-            [theApp waitForDummyEvent:timeout / 2.0];
+            [theApp syncQueue:timeout];
         }
-        if (!AWTToolkit.inDoDragDropLoop) {
-            [theApp postDummyEvent:true];
-            [theApp waitForDummyEvent:timeout / 2.0];
-        }
-
     } else {
         // could happen if we are embedded inside SWT application,
         // in this case just spin a single empty block through
@@ -585,11 +618,17 @@ JNI_COCOA_ENTER(env);
 
     if (mediatorObject == nil) return;
 
+//    NSLog(@"Starting nested run loop %d %@ %@",
+//        processEvents,
+//        (inAWT ? @"JavaRunLoopMode" : @"DefaultRunLoopMode"),
+//        [[NSRunLoop currentRunLoop] currentMode]);
+
     // Don't use acceptInputForMode because that doesn't setup autorelease pools properly
     BOOL isRunning = true;
     while (![mediatorObject shouldEndRunLoop] && isRunning) {
         isRunning = [[NSRunLoop currentRunLoop] runMode:(inAWT ? [ThreadUtilities javaRunLoopMode] : NSDefaultRunLoopMode)
                                              beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.010]];
+
         if (processEvents) {
             //We do not spin a runloop here as date is nil, so does not matter which mode to use
             // Processing all events excluding NSApplicationDefined which need to be processed
@@ -604,6 +643,9 @@ JNI_COCOA_ENTER(env);
 
         }
     }
+
+//    NSLog(@"Terminating nested run loop");
+
     [mediatorObject release];
 JNI_COCOA_EXIT(env);
 }
@@ -642,6 +684,22 @@ JNI_COCOA_ENTER(env);
         JavaRunnable* performer = [[JavaRunnable alloc] initWithRunnable:gRunnable];
         [performer performSelector:@selector(perform) withObject:nil afterDelay:(delay/1000.0)];
     }];
+JNI_COCOA_EXIT(env);
+}
+
+/*
+ * Class:     sun_lwawt_macosx_LWCToolkit
+ * Method:    performOnMainThreadLater
+ * Signature: (Ljava/lang/Runnable;)V
+ */
+JNIEXPORT void JNICALL Java_sun_lwawt_macosx_LWCToolkit_performOnMainThreadLater
+(JNIEnv *env, jclass clz, jobject runnable)
+{
+JNI_COCOA_ENTER(env);
+    jobject gRunnable = (*env)->NewGlobalRef(env, runnable);
+    CHECK_NULL(gRunnable);
+    JavaRunnable* performer = [[JavaRunnable alloc] initWithRunnable:gRunnable];
+    [ThreadUtilities performOnMainThreadLater:@selector(perform) on:performer withObject:nil];
 JNI_COCOA_EXIT(env);
 }
 
@@ -693,7 +751,7 @@ JNIEXPORT void JNICALL Java_sun_lwawt_macosx_LWCToolkit_activateApplicationIgnor
 (JNIEnv *env, jclass clazz)
 {
     JNI_COCOA_ENTER(env);
-    [ThreadUtilities performOnMainThreadWaiting:NO block:^(){
+    [ThreadUtilities performOnMainThreadlater:^(){
         if(![NSApp isActive]){
             [NSApp activateIgnoringOtherApps:YES];
         }
@@ -788,7 +846,12 @@ Java_sun_lwawt_macosx_LWCToolkit_initIDs
  */
 JNIEXPORT void JNICALL
 Java_sun_lwawt_macosx_LWCToolkit_initAppkit
-(JNIEnv *env, jclass klass, jobject appkitThreadGroup, jboolean headless) {
+(JNIEnv *env, jclass klass, jobject appkitThreadGroup, jboolean headless, jboolean isUnifiedEDT) {
+
+    if (isUnifiedEDT) {
+        setenv("AWT_IS_USING_UNIFIED_EDT", "true", 1);
+    }
+
     JNI_COCOA_ENTER(env);
 
     [ThreadUtilities setAppkitThreadGroup:(*env)->NewGlobalRef(env, appkitThreadGroup)];

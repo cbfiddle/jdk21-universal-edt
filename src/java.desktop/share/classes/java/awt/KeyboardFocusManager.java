@@ -2338,7 +2338,7 @@ public abstract class KeyboardFocusManager
         Throwable caughtEx = null;
         try {
             clearingCurrentLightweightRequests = false;
-            synchronized(Component.LOCK) {
+            synchronized(Component.getSharedTreeLock("KeyboardFocusManager")) {
 
                 if (currentFocusOwnerEvent != null && currentFocusOwner != null) {
                     ((AWTEvent) currentFocusOwnerEvent).isPosted = true;

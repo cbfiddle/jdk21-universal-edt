@@ -191,13 +191,21 @@ public class EOLTest {
     }
 
     public static void main(String[] args) {
-        EOLTest testEOL = new EOLTest();
-        testEOL.testConstructor1();
-        testEOL.testConstructor2();
-        testEOL.testConstructor3();
-        testEOL.testSetText();
-        testEOL.testDeserialization();
-        testEOL.checkFailures();
-        testEOL.dispose();
+        try {
+            java.awt.EventQueue.invokeAndWait(() -> {
+                EOLTest testEOL = new EOLTest();
+                testEOL.testConstructor1();
+                testEOL.testConstructor2();
+                testEOL.testConstructor3();
+                testEOL.testSetText();
+                testEOL.testDeserialization();
+                testEOL.checkFailures();
+                testEOL.dispose();
+            });
+        } catch (Exception e) {
+            System.err.println("invokeAndWait failed: " + e);
+            e.printStackTrace();
+            throw new RuntimeException(e);
+        }
     }
 }

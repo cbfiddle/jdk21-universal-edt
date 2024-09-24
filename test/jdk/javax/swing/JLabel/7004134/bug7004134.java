@@ -82,7 +82,6 @@ public class bug7004134 {
 
         Thread thread = new Thread(new ThreadGroup("Some ThreadGroup"), new Runnable() {
             public void run() {
-                SunToolkit.createNewAppContext();
 
                 try {
                     SwingUtilities.invokeAndWait(new Runnable() {

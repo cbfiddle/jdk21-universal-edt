@@ -183,16 +183,17 @@
  * or maybe a way for the app to continue running depending on the exact
  * nature of the problem that has been detected and how survivable it is.
  */
+
 #define CHECK_EXCEPTION() \
     if ((*env)->ExceptionOccurred(env) != NULL) { \
         if ([NSThread isMainThread] == YES) { \
             if (getenv("JNU_APPKIT_TRACE")) { \
                 (*env)->ExceptionDescribe(env); \
                 NSLog(@"%@",[NSThread callStackSymbols]); \
-              } else { \
+              } else if (getenv("AWT_IS_USING_UNIFIED_EDT") == NULL) { \
                   (*env)->ExceptionClear(env); \
               } \
-         }  \
+        } \
         if (getenv("JNU_NO_COCOA_EXCEPTION") == NULL) { \
             [NSException raise:NSGenericException format:@"Java Exception"]; \
         } else { \

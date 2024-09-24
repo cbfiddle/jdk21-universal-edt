@@ -27,6 +27,7 @@
 package java.awt;
 
 import java.awt.image.BufferedImage;
+import java.lang.reflect.InvocationTargetException;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.util.Locale;
@@ -67,6 +68,11 @@ public abstract class GraphicsEnvironment {
     private static Boolean defaultHeadless;
 
     /**
+     * Lazily initialized local graphics environment.
+     */
+    private static volatile GraphicsEnvironment LOCAL;
+
+    /**
      * This is an abstract class and cannot be instantiated directly.
      * Instances must be obtained from a suitable factory or query method.
      */
@@ -74,28 +80,17 @@ public abstract class GraphicsEnvironment {
     }
 
     /**
-     * Lazy initialization of local graphics environment using holder idiom.
+     * Creates and returns the GraphicsEnvironment, according to the
+     * platform-specific proxy class.
+     *
+     * @return the graphics environment
      */
-    private static final class LocalGE {
-
-        /**
-         * The instance of the local {@code GraphicsEnvironment}.
-         */
-        static final GraphicsEnvironment INSTANCE = createGE();
-
-        /**
-         * Creates and returns the GraphicsEnvironment, according to the
-         * platform-specific proxy class.
-         *
-         * @return the graphics environment
-         */
-        private static GraphicsEnvironment createGE() {
-            GraphicsEnvironment ge = PlatformGraphicsInfo.createGE();
-            if (isHeadless()) {
-                ge = new HeadlessGraphicsEnvironment(ge);
-            }
-            return ge;
+    private static GraphicsEnvironment createGE() {
+        GraphicsEnvironment ge = PlatformGraphicsInfo.createGE();
+        if (isHeadless()) {
+            ge = new HeadlessGraphicsEnvironment(ge);
         }
+        return ge;
     }
 
     /**
@@ -103,7 +98,28 @@ public abstract class GraphicsEnvironment {
      * @return the local {@code GraphicsEnvironment}
      */
     public static GraphicsEnvironment getLocalGraphicsEnvironment() {
-        return LocalGE.INSTANCE;
+        if (LOCAL != null) {
+            return LOCAL;
+        }
+        if (!EventQueue.isDispatchThread()) {
+            try {
+                EventQueue.invokeAndWait(GraphicsEnvironment::internalCreateLocalGraphicsEnvironmentIfNeeded);
+                return LOCAL;
+            } catch (InterruptedException e) {
+                throw new RuntimeException("GraphicsEnvironment.getLocalGraphicsEnvironment interrupted");
+            } catch (InvocationTargetException e) {
+                throw new RuntimeException("GraphicsEnvironment.getLocalGraphicsEnvironment failed: " + e.getTargetException());
+            }
+        } else {
+            internalCreateLocalGraphicsEnvironmentIfNeeded();
+            return LOCAL;
+        }
+    }
+
+    private static void internalCreateLocalGraphicsEnvironmentIfNeeded() {
+        if (LOCAL == null) {
+            LOCAL = createGE();
+        }
     }
 
     /**

@@ -248,10 +248,11 @@ final class NSEvent {
      * Converts NSEvent key modifiers to AWT key modifiers. Note that this
      * method adds the current mouse state as a mouse modifiers.
      *
-     * @param  modifierFlags the NSEvent key modifiers
+     * @param modifierFlags the NSEvent key modifiers
+     * @param eventType the NSEvent type
      * @return the java key and mouse modifiers
      */
-    static native int nsToJavaModifiers(int modifierFlags);
+    static native int nsToJavaModifiers(int modifierFlags, int eventType);
 
     /*
      * Converts NSEvent key info to AWT key info.

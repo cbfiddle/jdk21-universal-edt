@@ -29,16 +29,13 @@
 JNIEXPORT @interface NSApplicationAWT : NSApplication {
     NSString *fApplicationName;
     NSWindow *eventTransparentWindow;
-    NSTimeInterval dummyEventTimestamp;
-    NSConditionLock* seenDummyEventLock;
 }
 
 - (void) finishLaunching;
 - (void) registerWithProcessManager;
 - (void) setDockIconWithEnv:(JNIEnv *)env;
-- (void) postDummyEvent:(bool) useCocoa;
 - (void) postRunnableEvent:(void (^)())block;
-- (void) waitForDummyEvent:(double) timeout;
+- (void) syncQueue:(double) timeout;
 
 + (void) runAWTLoopWithApp:(NSApplication*)app;
 

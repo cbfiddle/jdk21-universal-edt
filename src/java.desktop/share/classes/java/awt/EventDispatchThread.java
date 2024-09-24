@@ -31,9 +31,9 @@ import java.awt.event.WindowEvent;
 
 import java.util.ArrayList;
 
-import sun.util.logging.PlatformLogger;
-
+import sun.awt.AWTAutoShutdown;
 import sun.awt.dnd.SunDragSourceContextPeer;
+import sun.util.logging.PlatformLogger;
 
 /**
  * EventDispatchThread is a package-private AWT class which takes
@@ -60,6 +60,7 @@ class EventDispatchThread extends Thread {
 
     private EventQueue theQueue;
     private volatile boolean doDispatch = true;
+    private EventPump externalEventPump;
 
     private static final int ANY_EVENT = -1;
 
@@ -78,6 +79,29 @@ class EventDispatchThread extends Thread {
         setEventQueue(queue);
     }
 
+    void configureExternalEventPump(EventPump pump) {
+        externalEventPump = pump;
+    }
+
+    boolean isDispatchThread() {
+        return externalEventPump != null ? externalEventPump.isDispatchThread() : Thread.currentThread() == this;
+    }
+
+    boolean isUsingExternalEventPump() {
+        return externalEventPump != null;
+    }
+
+    /**
+     * Called from EventQueue when an event is posted or wakeup has been called (indicating that an event has been
+     * posted to the PostEventQueue.
+     * @param e The posted event, or null if called from wakeup.
+     */
+    void eventPosted(AWTEvent e) {
+        if (externalEventPump != null && (e == null || !AWTAutoShutdown.isShutdownEvent(e))) {
+            externalEventPump.eventsPosted();
+        }
+    }
+
     /*
      * Must be called on EDT only, that's why no synchronization
      */
@@ -86,19 +110,27 @@ class EventDispatchThread extends Thread {
     }
 
     public void run() {
-        try {
-            pumpEvents(new Conditional() {
-                public boolean evaluate() {
-                    return true;
-                }
-            });
-        } finally {
-            getEventQueue().detachDispatchThread(this);
+        if (externalEventPump == null) {
+            try {
+                pumpEvents();
+            } finally {
+                getEventQueue().detachDispatchThread(this);
+            }
         }
+    }
+
+    private final static Conditional ALWAYS_TRUE = () -> true;
+
+    private void pumpEvents() {
+        pumpEvents(ALWAYS_TRUE);
     }
 
     void pumpEvents(Conditional cond) {
         pumpEvents(ANY_EVENT, cond);
+    }
+
+    void pumpEvents(EventFilter filter) {
+        pumpEventsForFilter(ALWAYS_TRUE, filter);
     }
 
     void pumpEventsForHierarchy(Conditional cond, Component modalComponent) {
@@ -109,21 +141,25 @@ class EventDispatchThread extends Thread {
         pumpEventsForHierarchy(id, cond, null);
     }
 
-    void pumpEventsForHierarchy(int id, Conditional cond, Component modalComponent) {
-        pumpEventsForFilter(id, cond, new HierarchyEventFilter(modalComponent));
+    private void pumpEventsForHierarchy(int id, Conditional cond, Component modalComponent) {
+        pumpEventsForFilter(id, cond, modalComponent != null ? new HierarchyEventFilter(modalComponent) : null);
     }
 
     void pumpEventsForFilter(Conditional cond, EventFilter filter) {
         pumpEventsForFilter(ANY_EVENT, cond, filter);
     }
 
-    void pumpEventsForFilter(int id, Conditional cond, EventFilter filter) {
-        addEventFilter(filter);
+    private void pumpEventsForFilter(int id, Conditional cond, EventFilter filter) {
+        if (filter != null) {
+            addEventFilter(filter);
+        }
         doDispatch = true;
         while (doDispatch && !isInterrupted() && cond.evaluate()) {
             pumpOneEventForFilters(id);
         }
-        removeEventFilter(filter);
+        if (filter != null) {
+            removeEventFilter(filter);
+        }
     }
 
     void addEventFilter(EventFilter filter) {
@@ -166,11 +202,20 @@ class EventDispatchThread extends Thread {
         synchronized (eventFilters) {
             for (int i = eventFilters.size() - 1; i >= 0; i--) {
                 EventFilter f = eventFilters.get(i);
-                EventFilter.FilterAction accept = f.acceptEvent(event);
-                if (accept == EventFilter.FilterAction.REJECT) {
+                EventFilter.FilterAction result = f.acceptEvent(event);
+
+                if (result != EventFilter.FilterAction.ACCEPT && eventLog.isLoggable(PlatformLogger.Level.FINEST)) {
+                    if (result == EventFilter.FilterAction.REJECT) {
+                        eventLog.finest("Event rejected: " + event);
+                    } else if (result == EventFilter.FilterAction.ACCEPT_IMMEDIATELY) {
+                        eventLog.finest("Event accepted immediately: " + event);
+                    }
+                }
+
+                if (result == EventFilter.FilterAction.REJECT) {
                     eventOK = false;
                     break;
-                } else if (accept == EventFilter.FilterAction.ACCEPT_IMMEDIATELY) {
+                } else if (result == EventFilter.FilterAction.ACCEPT_IMMEDIATELY) {
                     break;
                 }
             }
@@ -186,8 +231,11 @@ class EventDispatchThread extends Thread {
             do {
                 // EventQueue may change during the dispatching
                 eq = getEventQueue();
-
                 event = (id == ANY_EVENT) ? eq.getNextEvent() : eq.getNextEvent(id);
+                if (event == null) {
+                    doDispatch = false;
+                    return;
+                }
 
                 eventOK = filterAndCheckEvent(event);
                 if (!eventOK) {
@@ -215,7 +263,20 @@ class EventDispatchThread extends Thread {
         if (eventLog.isLoggable(PlatformLogger.Level.FINE)) {
             eventLog.fine("Processing exception: " + e);
         }
-        getUncaughtExceptionHandler().uncaughtException(this, e);
+        UncaughtExceptionHandler h = getUncaughtExceptionHandler();
+        if (h != null) {
+            h.uncaughtException(this, e);
+        } else {
+            // When used with an external event pump, probably will not get an uncaught exception handler
+            // because the thread has terminated.
+            h = Thread.getDefaultUncaughtExceptionHandler();
+            if (h != null) {
+                h.uncaughtException(this, e);
+            } else {
+                System.err.print("Exception in EventDispatchThread");
+                e.printStackTrace(System.err);
+            }
+        }
     }
 
     public synchronized EventQueue getEventQueue() {
@@ -225,10 +286,16 @@ class EventDispatchThread extends Thread {
         theQueue = eq;
     }
 
-    private static class HierarchyEventFilter implements EventFilter {
-        private Component modalComponent;
-        public HierarchyEventFilter(Component modalComponent) {
-            this.modalComponent = modalComponent;
+    public static LightweightModalEventFilter createLightweightModalEventFilter(Component modalComponent) {
+        return new HierarchyEventFilter(modalComponent);
+    }
+
+    public static class HierarchyEventFilter extends LightweightModalEventFilter {
+        private HierarchyEventFilter(Component modalComponent) {
+            super(modalComponent);
+        }
+        public Component get() {
+            return modalComponent;
         }
         public FilterAction acceptEvent(AWTEvent event) {
             if (modalComponent != null) {

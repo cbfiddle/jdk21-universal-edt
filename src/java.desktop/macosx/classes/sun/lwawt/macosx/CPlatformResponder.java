@@ -41,6 +41,8 @@ import java.util.Locale;
  */
 final class CPlatformResponder {
 
+    private static final sun.util.logging.PlatformLogger runLoopLog = sun.util.logging.PlatformLogger.getLogger("java.awt.event.RunLoop");
+
     private final PlatformEventNotifier eventNotifier;
     private final boolean isNpapiCallback;
     private int lastKeyPressCode = KeyEvent.VK_UNDEFINED;
@@ -66,7 +68,6 @@ final class CPlatformResponder {
 
         int jeventType = isNpapiCallback ? NSEvent.npToJavaEventType(eventType) :
                                            NSEvent.nsToJavaEventType(eventType);
-
         int jbuttonNumber = MouseEvent.NOBUTTON;
         int jclickCount = 0;
 
@@ -78,7 +79,7 @@ final class CPlatformResponder {
             jclickCount = clickCount;
         }
 
-        int jmodifiers = NSEvent.nsToJavaModifiers(modifierFlags);
+        int jmodifiers = NSEvent.nsToJavaModifiers(modifierFlags, eventType);
         if ((jeventType == MouseEvent.MOUSE_PRESSED) && (jbuttonNumber > MouseEvent.NOBUTTON)) {
             // 8294426: NSEvent.nsToJavaModifiers returns 0 on M2 MacBooks if the event is generated
             //  via tapping (not pressing) on a trackpad
@@ -101,7 +102,7 @@ final class CPlatformResponder {
                            final int absY, final int modifierFlags,
                            final double deltaX, final double deltaY,
                            final int scrollPhase) {
-        int jmodifiers = NSEvent.nsToJavaModifiers(modifierFlags);
+        int jmodifiers = NSEvent.nsToJavaModifiers(modifierFlags, 0);
         final boolean isShift = (jmodifiers & InputEvent.SHIFT_DOWN_MASK) != 0;
 
         int roundDeltaX = deltaAccumulatorX.getRoundedDelta(deltaX, scrollPhase);
@@ -214,7 +215,7 @@ final class CPlatformResponder {
             postsTyped = false;
         }
 
-        int jmodifiers = NSEvent.nsToJavaModifiers(modifierFlags);
+        int jmodifiers = NSEvent.nsToJavaModifiers(modifierFlags, eventType);
         long when = System.currentTimeMillis();
 
         if (jeventType == KeyEvent.KEY_PRESSED) {

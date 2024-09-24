@@ -253,7 +253,7 @@ public class CTrayIcon extends CFRetainedResource implements TrayIconPeer {
         }
 
         int jmodifiers = NSEvent.nsToJavaModifiers(
-                nsEvent.getModifierFlags());
+                nsEvent.getModifierFlags(), nsEvent.getType());
         boolean isPopupTrigger = NSEvent.isPopupTrigger(jmodifiers);
 
         int eventButtonMask = (jbuttonNumber > 0)?

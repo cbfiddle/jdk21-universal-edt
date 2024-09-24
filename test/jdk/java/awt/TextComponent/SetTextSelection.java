@@ -38,14 +38,22 @@ public final class SetTextSelection {
     private static final String SHORT_TEXT = "text";
 
     public static void main(String[] args) {
-        testNoFrame(true);
-        testNoFrame(false);
-        for (int i = 0; i < 5; i++) {
-            testFrame(true, i);
-            testFrame(false, i);
+        try {
+            java.awt.EventQueue.invokeAndWait(() -> {
+                testNoFrame(true);
+                testNoFrame(false);
+                for (int i = 0; i < 5; i++) {
+                    testFrame(true, i);
+                    testFrame(false, i);
+                }
+                testDisposedFrame(true);
+                testDisposedFrame(false);
+            });
+        } catch (Exception e) {
+            System.err.println("invokeAndWait failed: " + e);
+            e.printStackTrace();
+            throw new RuntimeException(e);
         }
-        testDisposedFrame(true);
-        testDisposedFrame(false);
     }
 
     private static void testNoFrame(boolean field) {

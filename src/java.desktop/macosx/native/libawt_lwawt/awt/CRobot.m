@@ -262,7 +262,7 @@ Java_sun_lwawt_macosx_CRobot_mouseWheel
 (JNIEnv *env, jobject peer, jint wheelAmt)
 {
     autoDelay(NO);
-    [ThreadUtilities performOnMainThreadWaiting:YES block:^(){
+    [ThreadUtilities performOnMainThreadWaiting:NO block:^(){
         CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
         CGEventRef event = CGEventCreateScrollWheelEvent(source,
                                                 kCGScrollEventUnitLine,
@@ -287,7 +287,7 @@ Java_sun_lwawt_macosx_CRobot_keyEvent
 (JNIEnv *env, jobject peer, jint javaKeyCode, jboolean keyPressed)
 {
     autoDelay(NO);
-    [ThreadUtilities performOnMainThreadWaiting:YES block:^(){
+    [ThreadUtilities performOnMainThreadWaiting:NO block:^(){
         CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
         CGKeyCode keyCode = GetCGKeyCode(javaKeyCode);
         CGEventRef event = CGEventCreateKeyboardEvent(source, keyCode, keyPressed);
@@ -377,13 +377,14 @@ Java_sun_lwawt_macosx_CRobot_nativeGetScreenPixels
 static void PostMouseEvent(const CGPoint point, CGMouseButton button,
                            CGEventType type, int clickCount, int eventNumber)
 {
-    [ThreadUtilities performOnMainThreadWaiting:YES block:^(){
+    [ThreadUtilities performOnMainThreadWaiting:NO block:^(){
         CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
         CGEventRef mouseEvent = CGEventCreateMouseEvent(source, type, point, button);
         if (mouseEvent != NULL) {
             CGEventSetIntegerValueField(mouseEvent, kCGMouseEventClickState, clickCount);
             CGEventSetIntegerValueField(mouseEvent, kCGMouseEventNumber, eventNumber);
             CGEventPost(kCGHIDEventTap, mouseEvent);
+            // NSLog(@"Injecting mouse event");  // debug
             CFRelease(mouseEvent);
         }
         if (source != NULL) {

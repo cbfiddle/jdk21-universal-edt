@@ -821,6 +821,20 @@ public class Window extends Container implements Accessible {
      */
     @SuppressWarnings("deprecation")
     public void pack() {
+        if (!EventQueue.isDispatchThread()) {
+            try {
+                EventQueue.invokeAndWait(this::internalPack);
+            } catch (InterruptedException e) {
+                System.err.println("Window.pack interrupted");
+            } catch (InvocationTargetException e) {
+                System.err.println("Window.pack failed: " + e.getTargetException());
+            }
+        } else {
+            internalPack();
+        }
+    }
+
+    private void internalPack() {
         Container parent = this.parent;
         if (parent != null && parent.peer == null) {
             parent.addNotify();
@@ -1049,6 +1063,21 @@ public class Window extends Container implements Accessible {
      */
     @Deprecated
     public void show() {
+        if (!EventQueue.isDispatchThread()) {
+            try {
+                EventQueue.invokeAndWait(this::internalShow);
+            } catch (InterruptedException e) {
+                System.err.println("Window.show interrupted");
+            } catch (InvocationTargetException e) {
+                System.err.println("Window.show failed: " + e.getTargetException());
+            }
+        } else {
+            internalShow();
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    private void internalShow() {
         if (peer == null) {
             addNotify();
         }

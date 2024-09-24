@@ -75,7 +75,21 @@ public class EnqueueWithDialogTest
     public static void main(String args[]) throws Exception {
         EnqueueWithDialogTest test = new EnqueueWithDialogTest();
         try {
-            test.init();
+            try {
+                EventQueue.invokeAndWait(() -> {
+                    try {
+                        test.init();
+                    } catch (Exception e) {
+                        System.err.println("test1 failed: " + e);
+                        e.printStackTrace();
+                        throw new RuntimeException(e.getMessage());
+                    }
+                });
+            } catch (Exception e) {
+                System.err.println("invokeAndWait failed: " + e);
+                e.printStackTrace();
+                throw new RuntimeException(e);
+            }
             test.start();
         } finally {
             if (d != null) {

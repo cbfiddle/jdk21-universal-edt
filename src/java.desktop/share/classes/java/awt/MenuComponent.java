@@ -435,7 +435,7 @@ public abstract class MenuComponent implements java.io.Serializable {
      * @return this component's locking object
      */
     protected final Object getTreeLock() {
-        return Component.LOCK;
+        return Component.getSharedTreeLock("MenuComponent");
     }
 
     /**

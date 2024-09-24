@@ -53,6 +53,7 @@ import java.awt.Panel;
 import java.awt.RenderingHints;
 import java.awt.ScrollPane;
 import java.awt.Scrollbar;
+import java.awt.SecondaryLoop;
 import java.awt.SystemTray;
 import java.awt.TextArea;
 import java.awt.TextField;
@@ -80,6 +81,7 @@ import java.io.InputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URL;
 import java.security.AccessController;
+import java.security.PrivilegedAction;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Locale;
@@ -171,7 +173,7 @@ public abstract class SunToolkit extends Toolkit
      * @param appContext AppContext to associate with the event queue
      */
     private static void initEQ(AppContext appContext) {
-        EventQueue eventQueue = new EventQueue();
+        EventQueue eventQueue = AWTAccessor.getEventQueueAccessor().createEventQueue(appContext);
         appContext.put(AppContext.EVENT_QUEUE_KEY, eventQueue);
 
         PostEventQueue postEventQueue = new PostEventQueue(eventQueue);
@@ -278,6 +280,11 @@ public abstract class SunToolkit extends Toolkit
      * method to create an AppContext & EventQueue for an Applet.
      */
     public static AppContext createNewAppContext() {
+
+        if (isSingleThreaded()) {
+            throw new UnsupportedOperationException("This toolkit does not support multiple application contexts");
+        }
+
         ThreadGroup threadGroup = Thread.currentThread().getThreadGroup();
         return createNewAppContext(threadGroup);
     }
@@ -410,7 +417,7 @@ public abstract class SunToolkit extends Toolkit
       * @param    status the value of lightweight focus request status
       */
 
-    public static void setLWRequestStatus(Window changed,boolean status){
+    public static void setLWRequestStatus(Window changed, boolean status){
         AWTAccessor.getWindowAccessor().setLWRequestStatus(changed, status);
     }
 
@@ -472,6 +479,9 @@ public abstract class SunToolkit extends Toolkit
             (PostEventQueue)appContext.get(POST_EVENT_QUEUE_KEY);
         if (postEventQueue != null) {
             postEventQueue.postEvent(event);
+        } else {
+            EventQueue eventQueue = (EventQueue)appContext.get(AppContext.EVENT_QUEUE_KEY);
+            eventQueue.postEvent(event);
         }
     }
 
@@ -1428,13 +1438,13 @@ public abstract class SunToolkit extends Toolkit
     }
 
     public static final int DEFAULT_WAIT_TIME = 10000;
+
     private static final int MAX_ITERS = 100;
     private static final int MIN_ITERS = 1;
     private static final int MINIMAL_DELAY = 5;
 
     /**
-     * Parameterless version of {@link #realSync(long)} which uses
-     * the default timeout of {@link #DEFAULT_WAIT_TIME}.
+     * Parameterless version of {@link #realSync(long)} which uses a default timeout.
      */
     public void realSync() {
         realSync(DEFAULT_WAIT_TIME);
@@ -1445,10 +1455,7 @@ public abstract class SunToolkit extends Toolkit
      * sub-system, flushing all pending work and waiting for all the
      * events to be processed.  This method guarantees that after
      * return no additional Java events will be generated, unless
-     * cause by user. Obviously, the method cannot be used on the
-     * event dispatch thread (EDT). In case it nevertheless gets
-     * invoked on this thread, the method throws the
-     * IllegalThreadException runtime exception.
+     * cause by user.
      *
      * <p> This method allows to write tests without explicit timeouts
      * or wait for some event.  Example:
@@ -1487,18 +1494,24 @@ public abstract class SunToolkit extends Toolkit
      */
     public void realSync(final long timeout) {
         if (EventQueue.isDispatchThread()) {
-            throw new IllegalThreadException("The SunToolkit.realSync() method cannot be used on the event dispatch thread (EDT).");
+            new RealSyncRunner(timeout);
+            return;
         }
+
+        // debug
+        // long startTime = System.currentTimeMillis();
+        // System.err.println(new java.util.Date(startTime) + " realSync " + timeout + " started");
+
         try {
             // We should wait unconditionally for the first event on EDT
-            EventQueue.invokeAndWait(() -> {/*dummy implementation*/});
+            EventQueue.invokeAndWait(realSyncDummyRunnable);
         } catch (InterruptedException | InvocationTargetException ignored) {
         }
         int bigLoop = 0;
         long end = TimeUnit.NANOSECONDS.toMillis(System.nanoTime()) + timeout;
         do {
             if (timeout(end) < 0) {
-                return;
+                break;
             }
             // Let's do sync first
             sync();
@@ -1539,10 +1552,66 @@ public abstract class SunToolkit extends Toolkit
             // resulted in native requests?  Therefore, check native events again.
         } while ((syncNativeQueue(timeout(end)) || waitForIdle(end))
                 && bigLoop < MAX_ITERS);
+
+        // debug
+        // long endTime = System.currentTimeMillis();
+        // System.err.println(new java.util.Date(endTime) + " realSync finished " + (endTime - startTime));
+    }
+
+    private final Runnable realSyncDummyRunnable = new RealSyncDummyRunnable();
+
+    private static class RealSyncDummyRunnable implements Runnable {
+        @Override
+        public void run() {
+        }
+    }
+
+    protected boolean isNativeEventDispatchThread() {
+        return false;
     }
 
     protected long timeout(long end){
         return end - TimeUnit.NANOSECONDS.toMillis(System.nanoTime());
+    }
+
+    private class RealSyncRunner extends Thread {
+
+        private final long timeout;
+        private final Object lock = new Object();
+        private SecondaryLoop loop;
+
+        RealSyncRunner(long timeout) {
+            super("RealSync Runner");
+            this.timeout = timeout;
+            @SuppressWarnings("removal")
+            final EventQueue eventQueue = AccessController.doPrivileged(
+                    (PrivilegedAction<EventQueue>) Toolkit.getDefaultToolkit()::getSystemEventQueue);
+            this.loop = eventQueue.createSecondaryLoop();
+            SecondaryLoop loopToEnter;
+            start();
+            // Guard against the unlikely case that the realSync has been completed and the loop exited.
+            synchronized (lock) {
+                loopToEnter = loop;
+            }
+            if (loopToEnter != null) {
+                System.err.println(new java.util.Date() + "***** Entering RealSyncRunner secondary loop");
+                loopToEnter.enter();
+            }
+        }
+
+        @Override
+        public void run() {
+            try {
+                SunToolkit.this.realSync(timeout);
+            } finally {
+                SecondaryLoop loopToExit = loop;
+                synchronized (lock) {
+                    loop = null;
+                }
+                System.err.println(new java.util.Date() + "***** Exiting RealSyncRunner secondary loop");
+                loopToExit.exit();
+            }
+        }
     }
 
     /**
@@ -1551,7 +1620,7 @@ public abstract class SunToolkit extends Toolkit
      * requests are processed, all native events are processed and
      * corresponding Java events are generated.  Should return
      * {@code true} if some events were processed,
-     * {@code false} otherwise.
+     * {@code false} otherwise. Must not be called on the native EDT.
      */
     protected abstract boolean syncNativeQueue(long timeout);
 
@@ -1567,52 +1636,17 @@ public abstract class SunToolkit extends Toolkit
      * events are processed (including paint events), and that if
      * recursive events were generated, they are also processed.
      * Should return {@code true} if more processing is
-     * necessary, {@code false} otherwise.
+     * necessary, {@code false} otherwise. This method must not be
+     * called on an EDT.
      */
     @SuppressWarnings("serial")
     private final boolean waitForIdle(final long end) {
         if (timeout(end) <= 0) {
             return false;
         }
-        flushPendingEvents();
-        final boolean queueWasEmpty;
-        final AtomicBoolean queueEmpty = new AtomicBoolean();
-        final AtomicBoolean eventDispatched = new AtomicBoolean();
-        synchronized (waitLock) {
-            queueWasEmpty = isEQEmpty();
-            postEvent(AppContext.getAppContext(),
-                      new PeerEvent(getSystemEventQueueImpl(), null, PeerEvent.LOW_PRIORITY_EVENT) {
-                          @Override
-                          public void dispatch() {
-                              // Here we block EDT.  It could have some
-                              // events, it should have dispatched them by
-                              // now.  So native requests could have been
-                              // generated.  First, dispatch them.  Then,
-                              // flush Java events again.
-                              int iters = 0;
-                              while (iters < MIN_ITERS) {
-                                  syncNativeQueue(timeout(end));
-                                  iters++;
-                              }
-                              while (syncNativeQueue(timeout(end)) && iters < MAX_ITERS) {
-                                  iters++;
-                              }
-                              flushPendingEvents();
 
-                              synchronized(waitLock) {
-                                  queueEmpty.set(isEQEmpty());
-                                  eventDispatched.set(true);
-                                  waitLock.notifyAll();
-                              }
-                          }
-                      });
-            try {
-                while (!eventDispatched.get() && timeout(end) > 0) {
-                    waitLock.wait(timeout(end));
-                }
-            } catch (InterruptedException ie) {
-                return false;
-            }
+        synchronized (waitLock) {
+            internalWaitForIdle(end);
         }
 
         try {
@@ -1622,10 +1656,60 @@ public abstract class SunToolkit extends Toolkit
         }
 
         flushPendingEvents();
+        return !isEQEmpty();
+    }
 
-        // Lock to force write-cache flush for queueEmpty.
-        synchronized (waitLock) {
-            return !(queueEmpty.get() && isEQEmpty() && queueWasEmpty);
+    /**
+     * Wait for events currently on the event queue to be processed.
+     * This method must not be called on an EDT.
+     * @return {@code true} if all events currently on the event queue are
+     * known to have been processed, {@code false} otherwise.
+     */
+
+    protected boolean internalWaitForIdle(long end)
+    {
+        int iters = 0;
+        while (iters < MIN_ITERS) {
+            syncNativeQueue(timeout(end));
+            iters++;
+        }
+        while (syncNativeQueue(timeout(end)) && iters < MAX_ITERS) {
+            iters++;
+        }
+
+        flushPendingEvents();
+
+        if (isEQEmpty()) {
+            return true;
+        }
+
+        EventQueue queue = getSystemEventQueueImplPP();
+        AtomicBoolean eventDispatched = new AtomicBoolean();
+        WaitingEvent ev = new WaitingEvent(queue, eventDispatched);
+        postEvent(AppContext.getAppContext(), ev);
+        try {
+            while (!eventDispatched.get() && timeout(end) > 0) {
+                waitLock.wait(timeout(end));
+            }
+            return eventDispatched.get();
+        } catch (InterruptedException ie) {
+            return false;
+        }
+    }
+
+    @SuppressWarnings("serial")
+    private class WaitingEvent extends PeerEvent {
+        private final AtomicBoolean lock;
+        public WaitingEvent(EventQueue eventQueue, AtomicBoolean lock) {
+            super(eventQueue, null, PeerEvent.LOW_PRIORITY_EVENT);
+            this.lock = lock;
+        }
+        @Override
+        public void dispatch() {
+            synchronized (waitLock) {
+                lock.set(true);
+                waitLock.notifyAll();
+            }
         }
     }
 
@@ -1892,6 +1976,29 @@ public abstract class SunToolkit extends Toolkit
         return false;
     }
 
+    /**
+     * Return true if the toolkit uses a single thread for event processing, which
+     * implies that multiple application contexts are not supported.
+     * Typically, this method returns true when an external event pump is used.
+     */
+    public static boolean isSingleThreaded() {
+        Toolkit toolkit = Toolkit.getDefaultToolkit();
+        if (toolkit instanceof SunToolkit t) {
+            return t.isSingleThreadedToolkit();
+        } else {
+            return false;
+        }
+    }
+
+    /**
+     * Return true if this toolkit uses a single thread for event processing, which
+     * implies that multiple application contexts are not supported.
+     * Typically, this method returns true when an external event pump is used.
+     */
+    protected boolean isSingleThreadedToolkit() {
+        return false;
+    }
+
     public void dismissPopupOnFocusLostIfNeeded(Window invoker) {}
 
     public void dismissPopupOnFocusLostIfNeededCleanUp(Window invoker) {}
@@ -2084,6 +2191,12 @@ public abstract class SunToolkit extends Toolkit
  *
  * We do this because EventQueue.postEvent() may be overridden by client
  * code, and we mustn't ever call client code from the toolkit thread.
+ *
+ * The delayed posting performed by this queue may also be necessary
+ * to ensure that component peers are
+ * available when the initial paint event (posted as part of peer
+ * initialization) is added to the EventQueue so that the target paint
+ * area is properly updated for the actual painting.
  */
 class PostEventQueue {
     private EventQueueItem queueHead = null;
@@ -2165,6 +2278,6 @@ class PostEventQueue {
                 queueTail = item;
             }
         }
-        SunToolkit.wakeupEventQueue(eventQueue, event.getSource() == AWTAutoShutdown.getInstance());
+        SunToolkit.wakeupEventQueue(eventQueue, AWTAutoShutdown.isShutdownEvent(event));
     }
 } // class PostEventQueue

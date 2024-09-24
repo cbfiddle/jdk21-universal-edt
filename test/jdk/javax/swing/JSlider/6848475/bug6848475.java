@@ -82,18 +82,17 @@ public class bug6848475 {
 
         robot.waitForIdle();
 
-        SwingUtilities.invokeAndWait(new Runnable() {
-            public void run() {
-                thumbRectX = getThumbRectField().x;
+        thumbRectX = getThumbRectField().x;
 
-                Point p = slider.getLocationOnScreen();
+        // Do not use the EDT to inject mouse events. If the EDT is the AppKit thread,
+        // it will block on mouse press because it wants to see the next event.
 
-                robot.mouseMove(p.x, p.y);
-                robot.mousePress(InputEvent.BUTTON1_DOWN_MASK);
-                robot.mouseMove(p.x + 20, p.y);
-                robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);
-            }
-        });
+        Point p = slider.getLocationOnScreen();
+
+        robot.mouseMove(p.x, p.y);
+        robot.mousePress(InputEvent.BUTTON1_DOWN_MASK);
+        robot.mouseMove(p.x + 20, p.y);
+        robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);
 
         robot.waitForIdle();
 

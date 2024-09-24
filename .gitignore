@@ -23,3 +23,9 @@ NashornProfile.txt
 /.cproject
 /compile_commands.json
 /.cache
+*.iml
+/exclude.txt
+/jtreg/
+/run*
+/testOutputs
+/install*

@@ -35,6 +35,7 @@ import java.awt.Desktop;
 import java.awt.Dialog;
 import java.awt.Dimension;
 import java.awt.Event;
+import java.awt.EventFilter;
 import java.awt.EventQueue;
 import java.awt.FileDialog;
 import java.awt.Frame;
@@ -44,12 +45,17 @@ import java.awt.GraphicsEnvironment;
 import java.awt.HeadlessException;
 import java.awt.Image;
 import java.awt.Insets;
+import java.awt.LightweightModalEventFilter;
 import java.awt.Menu;
 import java.awt.MenuBar;
 import java.awt.MenuItem;
+import java.awt.ModalEventFilter;
 import java.awt.Point;
 import java.awt.PopupMenu;
 import java.awt.RenderingHints;
+import java.awt.EventPump;
+import java.awt.SecondaryLoopBase;
+import java.awt.SecondaryLoop;
 import java.awt.SystemTray;
 import java.awt.Taskbar;
 import java.awt.Toolkit;
@@ -96,6 +102,8 @@ import java.util.MissingResourceException;
 import java.util.Objects;
 import java.util.ResourceBundle;
 import java.util.concurrent.Callable;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.swing.UIManager;
 
@@ -109,6 +117,7 @@ import sun.awt.SunToolkit;
 import sun.awt.datatransfer.DataTransferer;
 import sun.awt.dnd.SunDragSourceContextPeer;
 import sun.awt.util.ThreadGroupUtils;
+import sun.awt.AWTAutoShutdown;
 import sun.java2d.metal.MTLRenderQueue;
 import sun.java2d.opengl.OGLRenderQueue;
 import sun.lwawt.LWComponentPeer;
@@ -120,6 +129,7 @@ import sun.lwawt.PlatformComponent;
 import sun.lwawt.PlatformDropTarget;
 import sun.lwawt.PlatformWindow;
 import sun.lwawt.SecurityWarningWindow;
+import sun.util.logging.PlatformLogger;
 
 @SuppressWarnings("serial") // JDK implementation class
 final class NamedCursor extends Cursor {
@@ -132,6 +142,9 @@ final class NamedCursor extends Cursor {
  * Mac OS X Cocoa-based AWT Toolkit.
  */
 public final class LWCToolkit extends LWToolkit {
+
+    private static final PlatformLogger eventPumpLog = PlatformLogger.getLogger("java.awt.event.EventPump");
+
     // While it is possible to enumerate all mouse devices
     // and query them for the number of buttons, the code
     // that does it is rather complex. Instead, we opt for
@@ -140,8 +153,18 @@ public final class LWCToolkit extends LWToolkit {
     private static final int BUTTONS = 5;
 
     private static native void initIDs();
-    private static native void initAppkit(ThreadGroup appKitThreadGroup, boolean headless);
+    private static native void initAppkit(ThreadGroup appKitThreadGroup, boolean headless, boolean isUnifiedEDT);
+    private static native void nativeCreateRunLoopSource(Runnable performer);
+    private static native void nativeSignalRunLoopSource();
     private static CInputMethodDescriptor sInputMethodDescriptor;
+    private static MyEventPump myEventPump;
+    private static Thread mainThread;
+    private static volatile boolean eventsPending;
+    private static boolean isDispatching;
+    private static final AtomicInteger dispatchLevel = new AtomicInteger(0);
+    private static volatile MySecondaryLoop currentLoop;
+    private static final Object eventPumpLock = new Object();
+    private static boolean useMainThread = false;
 
     static {
         System.err.flush();
@@ -195,13 +218,15 @@ public final class LWCToolkit extends LWToolkit {
     @SuppressWarnings("removal")
     public LWCToolkit() {
         final String extraButtons = "sun.awt.enableExtraMouseButtons";
+        final String useMainThreadProperty = "sun.awt.macos.useMainThread";
         AccessController.doPrivileged((PrivilegedAction<Void>) () -> {
+            useMainThread = Boolean.parseBoolean(System.getProperty(useMainThreadProperty, "false"));
             areExtraMouseButtonsEnabled =
                  Boolean.parseBoolean(System.getProperty(extraButtons, "true"));
             //set system property if not yet assigned
             System.setProperty(extraButtons, ""+areExtraMouseButtonsEnabled);
-            initAppkit(ThreadGroupUtils.getRootThreadGroup(),
-                       GraphicsEnvironment.isHeadless());
+            System.out.println("Use experimental event dispatch on AppKit main thread: " + useMainThread);
+            initAppkit(ThreadGroupUtils.getRootThreadGroup(), GraphicsEnvironment.isHeadless(), useMainThread);
             return null;
         });
     }
@@ -477,6 +502,14 @@ public final class LWCToolkit extends LWToolkit {
         if (timeout <= 0) {
             return false;
         }
+
+        // This method must not be called on the AppKit main thread, because that will deadlock.
+        // The native code works by posting and waiting for events.
+
+        if (isNativeEventDispatchThread()) {
+            throw new IllegalStateException("The syncNativeQueue method must not be invoked on the AppKit main thread");
+        }
+
         if (SunDragSourceContextPeer.isDragDropInProgress()
                 || EventQueue.isDispatchThread()) {
             // The java code started the DnD, but the native drag may still not
@@ -484,7 +517,16 @@ public final class LWCToolkit extends LWToolkit {
             // also do not block EDT for a long time
             timeout = 50;
         }
-        return nativeSyncQueue(timeout);
+
+        // System.err.println("calling syncNativeQueue " + timeout);  // debug
+        boolean isMore = nativeSyncQueue(timeout) || SunDragSourceContextPeer.isDragDropInProgress();
+        // System.err.println("syncNativeQueue returns " + isMore);  // debug
+        return isMore;
+    }
+
+    @Override
+    protected boolean isNativeEventDispatchThread() {
+        return Thread.currentThread() == mainThread;
     }
 
     @Override
@@ -594,11 +636,22 @@ public final class LWCToolkit extends LWToolkit {
     // Intended to be called from the LWCToolkit.m only.
     @SuppressWarnings("removal")
     private static void installToolkitThreadInJava() {
-        Thread.currentThread().setName(APPKIT_THREAD_NAME);
-        AccessController.doPrivileged((PrivilegedAction<Void>) () -> {
-            Thread.currentThread().setContextClassLoader(null);
-            return null;
-        });
+        mainThread = Thread.currentThread();
+        mainThread.setName(APPKIT_THREAD_NAME);
+        if (useMainThread) {
+            nativeCreateRunLoopSource(LWCToolkit::dispatchEvents);
+            myEventPump = new MyEventPump();
+            AccessController.doPrivileged((PrivilegedAction<Void>) () -> {
+                ClassLoader cl = ClassLoader.getSystemClassLoader();
+                mainThread.setContextClassLoader(cl);
+                return null;
+            });
+        } else {
+            AccessController.doPrivileged((PrivilegedAction<Void>) () -> {
+                mainThread.setContextClassLoader(null);
+                return null;
+            });
+        }
     }
 
     @Override
@@ -686,6 +739,246 @@ public final class LWCToolkit extends LWToolkit {
         return wrapper.getResult();
     }
 
+    @Override
+    protected boolean isSingleThreadedToolkit() {
+        return useMainThread;
+    }
+
+    static final class MyEventPump implements EventPump
+    {
+        @Override
+        public boolean isDispatchThread()
+        {
+            return Thread.currentThread() == mainThread;
+        }
+
+        @Override
+        public void scheduleDispatch(Runnable r)
+        {
+            performOnMainThreadLater(r);
+        }
+
+        @Override
+        public SecondaryLoop createSecondaryLoop(EventFilter filter)
+        {
+            return new MySecondaryLoop(this, filter);
+        }
+
+        @Override
+        public void eventsPosted()
+        {
+            eventsAvailable();
+        }
+    }
+
+    private static class MySecondaryLoop extends SecondaryLoopBase {
+
+        private AtomicBoolean isRunning;
+        private long mediator;
+        private CPlatformWindow modalWindow;
+        private LightweightModalEventFilter modalComponentFilter;
+        private MySecondaryLoop parentLoop;
+
+        public MySecondaryLoop(EventPump pump, EventFilter filter) {
+            super(pump, filter != null);
+            modalWindow = getModalWindow(filter);
+            modalComponentFilter = modalWindow != null ? null : getModalComponentFilter(filter);
+        }
+
+        // Use the filter to recognize when a modal window run loop should be used.
+        private CPlatformWindow getModalWindow(EventFilter filter) {
+            if (filter instanceof ModalEventFilter m) {
+                Dialog d = m.getModalDialog();
+                LWWindowPeer peer = AWTAccessor.getComponentAccessor().getPeer(d);
+                PlatformWindow pw = peer.getPlatformWindow();
+                if (pw instanceof CPlatformWindow cpw) {
+                    return cpw;
+                }
+            }
+            return null;
+        }
+
+        private LightweightModalEventFilter getModalComponentFilter(EventFilter filter) {
+            if (filter instanceof LightweightModalEventFilter f) {
+                return f;
+            }
+            return null;
+        }
+
+        @Override
+        protected void runSecondaryLoop(AtomicBoolean isRunning) {
+
+            boolean shouldDispatch = false;
+
+            synchronized (eventPumpLock) {
+
+                if (eventPumpLog.isLoggable(PlatformLogger.Level.FINE)) {
+                    String m = "Starting secondary loop";
+                    if (eventsPending) {
+                        m = m + " with pending events";
+                    }
+                    if (modalWindow != null) {
+                        m = m + " for modal window " + modalWindow;
+                    }
+                    if (modalComponentFilter != null) {
+                        m = m + " for lightweight modal component " + modalComponentFilter.getModalDialog();
+                    }
+                    eventPumpLog.info(m);
+                }
+
+                this.parentLoop = currentLoop;
+                currentLoop = this;
+                this.isRunning = isRunning;
+                isDispatching = false;
+                if (eventsPending) {
+                    eventsPending = false;
+                    // There does not appear to be a reliable way to kick-start the nested run loop.
+                    // As long as we are on the main thread, dispatch the pending events from here.
+                    shouldDispatch = true;
+                }
+            }
+
+            if (shouldDispatch) {
+                eventPumpLog.fine("Secondary loop dispatching pending events");
+                nativeDispatchEventsNow();
+            }
+
+            // The events dispatched by nativeDispatchEventsNow may have exited this secondary loop
+            if (isRunning.get()) {
+                if (modalWindow != null) {
+                    long ptr = modalWindow.ptr;
+                    if (ptr != 0) {
+                        eventPumpLog.fine("Secondary loop starting modal run loop");
+                        CWrapper.NSWindow.runModal(ptr);
+                    }
+                } else {
+                    mediator = createAWTRunLoopMediator();
+                    eventPumpLog.fine("Secondary loop starting nested AWT run loop");
+                    doAWTRunLoopImpl(mediator, true, false);
+                }
+            }
+
+            eventPumpLog.info("Secondary run loop terminated");
+        }
+
+        @Override
+        protected void cancelSecondaryLoop() {
+            if (isRunning.get()) {
+                if (modalWindow != null) {
+                    CWrapper.NSWindow.stopModal();
+                } else {
+                    stopAWTRunLoop(mediator);  // releases mediator
+                }
+                mediator = 0;
+                modalWindow = null;
+                isRunning.set(false);
+                currentLoop = parentLoop;
+            }
+        }
+    }
+
+    /**
+     * This method is invoked when queued events may be available when the platform run loop is used.
+     * It may be invoked on any thread.
+     */
+    static void eventsAvailable() {
+
+        boolean doStart = false;
+
+        synchronized (eventPumpLock) {
+            if (isDispatching) {
+                if (!eventsPending) {
+                    eventsPending = true;
+                    eventPumpLog.finest("New events are available");
+                }
+            } else {
+                eventPumpLog.finest("New events are available: signaling run loop source");
+                eventsPending = false;
+                doStart = true;
+            }
+        }
+
+        if (doStart) {
+            AWTAutoShutdown.getInstance().notifyThreadBusy(mainThread);
+            nativeSignalRunLoopSource();
+        }
+    }
+
+    /**
+     * This method is invoked by the platform run loop on the main thread when the platform run loop is used.
+     * Recursive invocations are possible when secondary loops are used.
+     */
+    static void dispatchEvents() {
+
+        int thisLevel = dispatchLevel.incrementAndGet();
+
+        boolean wasDispatching;
+        synchronized (eventPumpLock) {
+            wasDispatching = isDispatching;
+            isDispatching = true;
+        }
+
+        EventFilter filter = currentLoop != null ? currentLoop.modalComponentFilter : null;
+
+        if (eventPumpLog.isLoggable(PlatformLogger.Level.FINEST)) {
+            if (filter != null) {
+                eventPumpLog.finest("Run loop dispatching events with filter at level " + thisLevel);
+            } else {
+                eventPumpLog.finest("Run loop dispatching events at level " + thisLevel);
+            }
+        }
+
+        EventQueue q = LWCToolkit.getLWCToolkit().getSystemEventQueueImpl();
+
+        // To avoid starving the AppKit run loop, any AWT events posted henceforth will be deferred until the next
+        // invocation of this method.
+
+        SunToolkit.flushPendingEvents();
+        q.deferFutureEvents();
+
+        AWTAccessor.getEventQueueAccessor().pumpEvents(q, filter);
+
+        boolean deferredEventsMatter = false;
+        if (q.enableDeferredEvents()) {
+            if (!eventsPending) {
+                deferredEventsMatter = true;
+                eventsPending = true;
+            }
+        } else if (!eventsPending && q.peekEvent() != null) {
+            // I suspect this should not happen
+            eventPumpLog.finest("Non-empty queue found after pumping events");
+            eventsPending = true;
+        }
+
+        synchronized (eventPumpLock) {
+            isDispatching = wasDispatching;
+        }
+        int level = dispatchLevel.decrementAndGet();
+
+        if (eventsPending) {
+            if (eventPumpLog.isLoggable(PlatformLogger.Level.FINEST)) {
+                if (deferredEventsMatter) {
+                    eventPumpLog.finest("Event pump dispatch at level " + thisLevel + " terminated with deferred events");
+                } else {
+                    eventPumpLog.finest("Event pump dispatch at level " + thisLevel + " terminated with pending events");
+                }
+            }
+        } else if (currentLoop != null) {
+            if (eventPumpLog.isLoggable(PlatformLogger.Level.FINEST)) {
+                eventPumpLog.finest("Event pump dispatch at level " + thisLevel + " terminated with active secondary loop");
+            }
+        } else {
+            eventPumpLog.finest("Event pump dispatch at level " + thisLevel + " terminated");
+        }
+
+        if (eventsPending) {
+            eventsAvailable();
+            AWTAutoShutdown.getInstance().notifyThreadBusy(mainThread);
+        } else if (level == 0) {
+            AWTAutoShutdown.getInstance().notifyThreadFree(mainThread);
+        }
+    }
+
     static final class CallableWrapper<T> implements Runnable {
         final Callable<T> callable;
         T object;
@@ -711,16 +1004,63 @@ public final class LWCToolkit extends LWToolkit {
     }
 
     /**
+     * Flush the AWT event queue for the specified component.
+     */
+    public static void flushEventQueue(Component component) {
+
+        if (useMainThread && Thread.currentThread() == mainThread) {
+            nativeDispatchEventsNow();
+            return;
+        }
+
+        try {
+            internalRunLaterWaiting(dummyRunnable, component);
+        } catch (InvocationTargetException e) {
+            e.printStackTrace();
+            throw new RuntimeException(e.getTargetException());
+        }
+    }
+
+    private static Runnable dummyRunnable = new DummyRunnable();
+
+    private static class DummyRunnable implements Runnable {
+        @Override
+        public void run() {
+        }
+    }
+
+    /**
      * Kicks an event over to the appropriate event queue and waits for it to
      * finish To avoid deadlocking, we manually run the NSRunLoop while waiting
      * Any selector invoked using ThreadUtilities performOnMainThread will be
      * processed in doAWTRunLoop The InvocationEvent will call
      * LWCToolkit.stopAWTRunLoop() when finished, which will stop our manual
-     * run loop. Does not dispatch native events while in the loop
+     * run loop. Does not dispatch native events while in the loop.
+     * If performed on the AppKit main thread and the AppKit main thread is the
+     * AWT event dispatch thread, then the runnable is run directly.
      */
     public static void invokeAndWait(Runnable runnable, Component component)
             throws InvocationTargetException {
         Objects.requireNonNull(component, "Null component provided to invokeAndWait");
+
+        if (useMainThread && Thread.currentThread() == mainThread) {
+            runnable.run();
+        } else {
+            internalRunLaterWaiting(runnable, component);
+        }
+    }
+
+    /**
+     * Kicks an event over to the appropriate event queue and waits for it to
+     * finish To avoid deadlocking, we manually run the NSRunLoop while waiting
+     * Any selector invoked using ThreadUtilities performOnMainThread will be
+     * processed in doAWTRunLoop The InvocationEvent will call
+     * LWCToolkit.stopAWTRunLoop() when finished, which will stop our manual
+     * run loop. Does not dispatch native events while in the loop.
+     */
+    private static void internalRunLaterWaiting(Runnable runnable, Component component)
+             throws InvocationTargetException {
+        Objects.requireNonNull(component, "Null component provided to internalRunLaterWaiting");
 
         long mediator = createAWTRunLoopMediator();
         InvocationEvent invocationEvent =
@@ -732,6 +1072,10 @@ public final class LWCToolkit extends LWToolkit {
                             }
                         },
                         true);
+
+        if (useMainThread) {
+            nativeDispatchEventsNow();
+        }
 
         AppContext appContext = SunToolkit.targetToAppContext(component);
         SunToolkit.postEvent(appContext, invocationEvent);
@@ -779,6 +1123,20 @@ public final class LWCToolkit extends LWToolkit {
      * @param delay a delay in milliseconds
      */
     static native void performOnMainThreadAfterDelay(Runnable r, long delay);
+
+    /**
+     * Schedules a {@code Runnable} execution on the Appkit thread at some later time.
+     * @param r a {@code Runnable} to execute
+     */
+    static native void performOnMainThreadLater(Runnable r);
+
+    static native void nativeDispatchEventsNow();
+
+    @Override
+    protected EventPump getEventPump()
+    {
+        return myEventPump;
+    }
 
 // DnD support
 
@@ -966,7 +1324,7 @@ public final class LWCToolkit extends LWToolkit {
         //TODO: Test: 2 file dialogs, separate AppContexts: a) Dialog 1 blocked, shouldn't be. Frame 4 blocked (shouldn't be).
         return (modalityType == null) ||
             (modalityType == Dialog.ModalityType.MODELESS) ||
-            (modalityType == Dialog.ModalityType.DOCUMENT_MODAL) ||
+            (modalityType == Dialog.ModalityType.DOCUMENT_MODAL && !isSingleThreadedToolkit()) ||
             (modalityType == Dialog.ModalityType.APPLICATION_MODAL) ||
             (modalityType == Dialog.ModalityType.TOOLKIT_MODAL);
     }

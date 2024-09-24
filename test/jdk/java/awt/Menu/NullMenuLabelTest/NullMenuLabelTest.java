@@ -38,11 +38,17 @@ public class NullMenuLabelTest {
         Frame frame = new Frame("Test Frame");
         frame.pack();
         frame.setVisible(true);
-        MenuBar menuBar = new MenuBar();
-        frame.setMenuBar(menuBar);
-        Menu menu = new Menu(null);
-        menuBar.add(menu);
-        menu.add(new MenuItem(null));
+        try {
+            EventQueue.invokeAndWait(() -> {
+                MenuBar menuBar = new MenuBar();
+                frame.setMenuBar(menuBar);
+                Menu menu = new Menu(null);
+                menuBar.add(menu);
+                menu.add(new MenuItem(null));
+            });
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
         // If we got this far, the test succeeded
         frame.setVisible(false);
         frame.dispose();

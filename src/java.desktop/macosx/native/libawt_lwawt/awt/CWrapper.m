@@ -136,6 +136,39 @@ JNI_COCOA_EXIT(env);
 
 /*
  * Class:     sun_lwawt_macosx_CWrapper$NSWindow
+ * Method:    runModal
+ * Signature: (J)V
+ */
+JNIEXPORT void JNICALL
+Java_sun_lwawt_macosx_CWrapper_00024NSWindow_runModal
+(JNIEnv *env, jclass cls, jlong windowPtr)
+{
+JNI_COCOA_ENTER(env);
+
+   NSWindow *w = (NSWindow *)jlong_to_ptr(windowPtr);
+   [NSApp runModalForWindow:w];
+
+JNI_COCOA_EXIT(env);
+}
+
+/*
+ * Class:     sun_lwawt_macosx_CWrapper$NSWindow
+ * Method:    stopModal
+ * Signature: (J)V
+ */
+JNIEXPORT void JNICALL
+Java_sun_lwawt_macosx_CWrapper_00024NSWindow_stopModal
+(JNIEnv *env, jclass cls)
+{
+JNI_COCOA_ENTER(env);
+
+    [NSApp stopModal];
+
+JNI_COCOA_EXIT(env);
+}
+
+/*
+ * Class:     sun_lwawt_macosx_CWrapper$NSWindow
  * Method:    orderFront
  * Signature: (J)V
  */
@@ -490,7 +523,7 @@ JNI_COCOA_ENTER(env);
 
     NSView *view = (NSView *)jlong_to_ptr(viewPtr);
     NSView *subview = (NSView *)jlong_to_ptr(subviewPtr);
-    [ThreadUtilities performOnMainThreadWaiting:YES block:^(){
+    [ThreadUtilities performOnMainThreadWaiting:NO block:^(){
         [view addSubview:subview];
     }];
 

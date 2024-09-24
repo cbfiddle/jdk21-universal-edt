@@ -39,7 +39,7 @@ import javax.swing.*;
  *          java.desktop/java.awt.peer
  * @build java.desktop/java.awt.Helper
  * @build Util
- * @run main JTextFieldInGlassPaneOverlapping
+ * @run main/timeout=240 JTextFieldInGlassPaneOverlapping
  */
 public class JTextFieldInGlassPaneOverlapping extends GlassPaneOverlappingTestBase {
 

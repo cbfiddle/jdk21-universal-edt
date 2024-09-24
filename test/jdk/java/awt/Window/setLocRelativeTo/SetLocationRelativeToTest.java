@@ -90,19 +90,30 @@ public class SetLocationRelativeToTest {
     }
 
     public static void main(String args[]) {
-        SetLocationRelativeToTest test = new SetLocationRelativeToTest();
-        test.doAWTTest(true);
-        test.doAWTTest(false);
+        SetLocationRelativeToTest[] testx = new SetLocationRelativeToTest[1];
+
+        try {
+            EventQueue.invokeAndWait(() -> {
+                testx[0] = new SetLocationRelativeToTest();
+                testx[0].doAWTTest(true);
+                testx[0].doAWTTest(false);
+            });
+        } catch (Exception e) {
+            System.err.println("invokeAndWait failed: " + e);
+            e.printStackTrace();
+            throw new RuntimeException(e);
+        }
+
+        SetLocationRelativeToTest test = testx[0];
         try {
             test.doSwingTest(true);
             test.doSwingTest(false);
-        }catch(InterruptedException ie) {
+        } catch (InterruptedException ie) {
             ie.printStackTrace();
-        }catch(java.lang.reflect.InvocationTargetException ite) {
+        } catch (java.lang.reflect.InvocationTargetException ite) {
             ite.printStackTrace();
             throw new RuntimeException("InvocationTarget?");
         }
-        return;
     }
 
     // In regular testing, we select just few components to test
@@ -259,8 +270,8 @@ public class SetLocationRelativeToTest {
     boolean compareLocations(final Window w, final Component c, ExtendedRobot robot) {
         final Point pc = new Point();
         final Point pw = new Point();
-        try {
-            EventQueue.invokeAndWait( () -> {
+
+        if (EventQueue.isDispatchThread()) {
                 pw.setLocation(w.getLocationOnScreen());
                 pw.translate(w.getWidth()/2, w.getHeight()/2);
                 if(!c.isVisible()) {
@@ -271,12 +282,26 @@ public class SetLocationRelativeToTest {
                     pc.setLocation(c.getLocationOnScreen());
                     pc.translate(c.getWidth()/2, c.getHeight()/2);
                 }
-            });
-        } catch(InterruptedException ie) {
-            throw new RuntimeException("Interrupted");
-        } catch(java.lang.reflect.InvocationTargetException ite) {
-            ite.printStackTrace();
-            throw new RuntimeException("InvocationTarget?");
+        } else {
+            try {
+                EventQueue.invokeAndWait( () -> {
+                    pw.setLocation(w.getLocationOnScreen());
+                    pw.translate(w.getWidth()/2, w.getHeight()/2);
+                    if(!c.isVisible()) {
+                        Rectangle screenRect = w.getGraphicsConfiguration().getBounds();
+                        pc.setLocation(screenRect.x+screenRect.width/2,
+                                       screenRect.y+screenRect.height/2);
+                    }else{
+                        pc.setLocation(c.getLocationOnScreen());
+                        pc.translate(c.getWidth()/2, c.getHeight()/2);
+                    }
+                });
+            } catch(InterruptedException ie) {
+                throw new RuntimeException("Interrupted");
+            } catch(java.lang.reflect.InvocationTargetException ite) {
+                ite.printStackTrace();
+                throw new RuntimeException("InvocationTarget?");
+            }
         }
         robot.waitForIdle(delay);
         // Compare with 1 tolerance to forgive possible rounding errors

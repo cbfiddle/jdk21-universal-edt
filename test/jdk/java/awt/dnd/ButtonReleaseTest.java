@@ -74,7 +74,7 @@ public class ButtonReleaseTest {
 
     public static void main(String[] args) throws Exception {
         Robot robot = new Robot();
-        robot.setAutoWaitForIdle(true);
+        //robot.setAutoWaitForIdle(true);
         robot.setAutoDelay(20);
 
         try {

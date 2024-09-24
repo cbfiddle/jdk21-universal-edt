@@ -751,18 +751,10 @@ public class Robot {
 
     /**
      * Waits until all events currently on the event queue have been processed.
-     * @throws  IllegalThreadStateException if called on the AWT event dispatching thread
      */
     public synchronized void waitForIdle() {
-        checkNotDispatchThread();
         SunToolkit.flushPendingEvents();
         ((SunToolkit) Toolkit.getDefaultToolkit()).realSync();
-    }
-
-    private static void checkNotDispatchThread() {
-        if (EventQueue.isDispatchThread()) {
-            throw new IllegalThreadStateException("Cannot call method from the event dispatcher thread");
-        }
     }
 
     /**

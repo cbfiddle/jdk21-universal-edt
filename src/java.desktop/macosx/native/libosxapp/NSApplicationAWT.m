@@ -53,7 +53,12 @@ enum {
     ExecuteBlockEvent = 777, NativeSyncQueueEvent
 };
 
-@implementation NSApplicationAWT
+@implementation NSApplicationAWT {
+    NSObject *dummyEventLock;
+    NSTimeInterval dummyEventTimestamp;
+    NSConditionLock *seenDummyEventLock;
+    NSInteger dummyWaiterCount;
+}
 
 - (id) init
 {
@@ -65,8 +70,8 @@ enum {
 AWT_ASSERT_APPKIT_THREAD;
     fApplicationName = nil;
     dummyEventTimestamp = 0.0;
-    seenDummyEventLock = nil;
-
+    dummyEventLock = [[NSObject alloc] init];
+    seenDummyEventLock = [[NSConditionLock alloc] initWithCondition:NO];
 
     // NSApplication will call _RegisterApplication with the application's bundle, but there may not be one.
     // So, we need to call it ourselves to ensure the app is set up properly.
@@ -244,7 +249,7 @@ AWT_ASSERT_APPKIT_THREAD;
 // HACK BEGIN
     // The following is necessary to make the java process behave like a
     // proper foreground application...
-    [ThreadUtilities performOnMainThreadWaiting:NO block:^(){
+    [ThreadUtilities performOnMainThreadLater:^(){
         ProcessSerialNumber psn;
         GetCurrentProcess(&psn);
         TransformProcessType(&psn, kProcessTransformToForegroundApplication);
@@ -357,13 +362,26 @@ untilDate:(NSDate *)expiration inMode:(NSString *)mode dequeue:(BOOL)deqFlag {
 
 - (void)sendEvent:(NSEvent *)event
 {
-    if ([event type] == NSApplicationDefined
-            && TS_EQUAL([event timestamp], dummyEventTimestamp)
-            && (short)[event subtype] == NativeSyncQueueEvent
-            && [event data1] == NativeSyncQueueEvent
-            && [event data2] == NativeSyncQueueEvent) {
-        [seenDummyEventLock lockWhenCondition:NO];
-        [seenDummyEventLock unlockWithCondition:YES];
+    BOOL isCurrentDummyEvent = NO;
+    @synchronized (dummyEventLock) {
+//        isCurrentDummyEvent = ([event type] == NSApplicationDefined
+//                    && TS_EQUAL([event timestamp], dummyEventTimestamp)
+//                    && (short)[event subtype] == NativeSyncQueueEvent
+//                    && [event data1] == NativeSyncQueueEvent
+//                    && [event data2] == NativeSyncQueueEvent);
+         isCurrentDummyEvent = ([event type] == NSKeyUp
+                      && TS_EQUAL([event timestamp], dummyEventTimestamp)
+                      && [event keyCode] == 0);
+   }
+
+    if (isCurrentDummyEvent) {
+        BOOL acquired = [seenDummyEventLock lockBeforeDate:[NSDate dateWithTimeIntervalSinceNow:2]];
+        if (acquired) {
+            //NSLog(@"sendEvent: announcing dummy event arrival"); // debug
+            [seenDummyEventLock unlockWithCondition:YES];
+        } else {
+            NSLog(@"sendEvent: timed out waiting for dummy event lock"); // debug
+        }
     } else if ([event type] == NSApplicationDefined
                && (short)[event subtype] == ExecuteBlockEvent
                && [event data1] != 0 && [event data2] == ExecuteBlockEvent) {
@@ -375,6 +393,7 @@ untilDate:(NSDate *)expiration inMode:(NSString *)mode dequeue:(BOOL)deqFlag {
         // so we have to do it ourselves.
         [[self keyWindow] sendEvent:event];
     } else {
+        // NSLog(@"Event received: %@", event); // debug
         [super sendEvent:event];
     }
 }
@@ -403,49 +422,73 @@ untilDate:(NSDate *)expiration inMode:(NSString *)mode dequeue:(BOOL)deqFlag {
     [pool drain];
 }
 
-- (void)postDummyEvent:(bool)useCocoa {
-    seenDummyEventLock = [[NSConditionLock alloc] initWithCondition:NO];
-    dummyEventTimestamp = [NSProcessInfo processInfo].systemUptime;
+- (void)syncQueue:(double)timeout {
 
-    NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
-    NSEvent* event = [NSEvent otherEventWithType: NSApplicationDefined
-                                        location: NSMakePoint(0,0)
-                                   modifierFlags: 0
-                                       timestamp: dummyEventTimestamp
-                                    windowNumber: 0
-                                         context: nil
-                                         subtype: NativeSyncQueueEvent
-                                           data1: NativeSyncQueueEvent
-                                           data2: NativeSyncQueueEvent];
-    if (useCocoa) {
+    BOOL doPost = NO;
+
+    @synchronized (dummyEventLock)
+    {
+        if (dummyEventTimestamp == 0) {
+            dummyEventTimestamp = [NSProcessInfo processInfo].systemUptime;
+            [seenDummyEventLock unlockWithCondition:NO];
+            doPost = YES;
+        }
+        dummyWaiterCount++;
+    }
+
+    if (doPost) {
+        NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
+//        NSEvent* event = [NSEvent otherEventWithType: NSApplicationDefined
+//                                            location: NSMakePoint(0,0)
+//                                       modifierFlags: 0
+//                                           timestamp: dummyEventTimestamp
+//                                        windowNumber: 0
+//                                             context: nil
+//                                             subtype: NativeSyncQueueEvent
+//                                               data1: NativeSyncQueueEvent
+//                                               data2: NativeSyncQueueEvent];
+
+        // Application-defined events are ignored by the AWT run loop, so use a Key Event.
+
+        NSEvent* event = [NSEvent keyEventWithType: NSKeyUp
+                                          location: NSMakePoint(0,0)
+                                     modifierFlags: 0
+                                         timestamp: dummyEventTimestamp
+                                      windowNumber: 0
+                                           context: nil
+                                        characters: @""
+                       charactersIgnoringModifiers: @""
+                                         isARepeat: NO
+                                           keyCode: 0];
         [NSApp postEvent:event atStart:NO];
-    } else {
-        ProcessSerialNumber psn;
-        GetCurrentProcess(&psn);
-        CGEventPostToPSN(&psn, [event CGEvent]);
-    }
-    [pool drain];
-}
 
-- (void)waitForDummyEvent:(double)timeout {
-    bool unlock = true;
-    if (timeout >= 0) {
-        double sec = timeout / 1000;
-        unlock = [seenDummyEventLock lockWhenCondition:YES
-                               beforeDate:[NSDate dateWithTimeIntervalSinceNow:sec]];
-    } else {
-        [seenDummyEventLock lockWhenCondition:YES];
+        [pool drain];
     }
-    if (unlock) {
-        [seenDummyEventLock unlock];
-    }
-    [seenDummyEventLock release];
 
-    seenDummyEventLock = nil;
+    if (timeout <= 50) {
+        timeout = 50;
+    }
+
+    double sec = timeout / 1000;
+    BOOL acquired = [seenDummyEventLock lockWhenCondition:YES
+                                               beforeDate:[NSDate dateWithTimeIntervalSinceNow:sec]];
+    if (!acquired) {
+        NSLog(@"syncQueue: timed out waiting for dummy event lock");  // debug
+        if (NO) {
+            JNIEnv *env = [ThreadUtilities getJNIEnvUncached];
+            (*env)->FatalError(env, "syncQueue timed out");
+        }
+    }
+
+    @synchronized (dummyEventLock) {
+        if (--dummyWaiterCount == 0) {
+            dummyEventTimestamp = 0;
+            [seenDummyEventLock unlockWithCondition:NO];
+        }
+    }
 }
 
 @end
-
 
 void OSXAPP_SetApplicationDelegate(id <NSApplicationDelegate> newdelegate)
 {

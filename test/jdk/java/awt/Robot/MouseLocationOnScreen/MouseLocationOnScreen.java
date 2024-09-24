@@ -35,6 +35,7 @@ import java.awt.Robot;
  * @key headful
  * @bug 8196030
  * @summary checks that Robot and MouseInfo use the same coordinates
+ * @run main/timeout=240 MouseLocationOnScreen
  */
 public final class MouseLocationOnScreen {
 

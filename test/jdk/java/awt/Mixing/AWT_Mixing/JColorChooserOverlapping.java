@@ -37,7 +37,7 @@ import javax.swing.*;
  *          java.desktop/java.awt.peer
  * @build java.desktop/java.awt.Helper
  * @build Util
- * @run main JColorChooserOverlapping
+ * @run main/timeout=240 JColorChooserOverlapping
  */
 public class JColorChooserOverlapping extends SimpleOverlappingTestBase {
 

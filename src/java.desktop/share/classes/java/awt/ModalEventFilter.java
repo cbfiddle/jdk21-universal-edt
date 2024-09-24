@@ -28,17 +28,30 @@ import java.awt.event.*;
 
 import sun.awt.AppContext;
 
-abstract class ModalEventFilter implements EventFilter {
+/**
+ * An event filter associated with modal dialogs.
+ */
+public abstract class ModalEventFilter implements EventFilter {
 
+    /** The modal dialog */
     protected Dialog modalDialog;
+    /** True to disable the filter */
     protected boolean disabled;
 
+    /**
+     * Initialize this base class.
+     * @param modalDialog The modal dialog.
+     */
     protected ModalEventFilter(Dialog modalDialog) {
         this.modalDialog = modalDialog;
         disabled = false;
     }
 
-    Dialog getModalDialog() {
+    /**
+     * Return the modal dialog.
+     * @return the modal dialog.
+     */
+    public Dialog getModalDialog() {
         return modalDialog;
     }
 
@@ -70,6 +83,11 @@ abstract class ModalEventFilter implements EventFilter {
         return FilterAction.ACCEPT;
     }
 
+    /**
+     * Return the filter action for a window.
+     * @param w The window.
+     * @return the filter action.
+     */
     protected abstract FilterAction acceptWindow(Window w);
 
     // When a modal dialog is hidden its modal filter may not be deleted from

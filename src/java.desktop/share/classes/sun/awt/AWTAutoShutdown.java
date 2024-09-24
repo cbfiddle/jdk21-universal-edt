@@ -133,6 +133,15 @@ public final class AWTAutoShutdown implements Runnable {
     }
 
     /**
+     * Indicate whether the specified event is a shutdown event.
+     * @param e The event.
+     * @return true if and only if the event is a shutdown event.
+     */
+    public static boolean isShutdownEvent(AWTEvent e) {
+        return e.getSource() == getInstance();
+    }
+
+    /**
      * Notify that the toolkit thread is not waiting for a native event
      * to appear in its queue.
      *

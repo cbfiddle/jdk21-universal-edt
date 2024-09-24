@@ -43,11 +43,19 @@ public class AwtListGarbageCollectionTest {
     private static final long ENQUEUE_TIMEOUT = 50;
 
     public static void main(String[] args) throws InterruptedException {
-        Frame frame = new Frame("List leak test");
         try {
-            test(frame);
-        } finally {
-            frame.dispose();
+            java.awt.EventQueue.invokeAndWait(() -> {
+                Frame frame = new Frame("List leak test");
+                try {
+                    test(frame);
+                } finally {
+                    frame.dispose();
+                }
+            });
+        } catch (Exception e) {
+            System.err.println("invokeAndWait failed: " + e);
+            e.printStackTrace();
+            throw new RuntimeException(e);
         }
     }
 

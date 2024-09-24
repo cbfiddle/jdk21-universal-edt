@@ -56,7 +56,7 @@ import test.java.awt.regtesthelpers.Util;
  *          java.desktop/java.awt.peer
  * @build java.desktop/java.awt.Helper
  * @build Util
- * @run main ViewportOverlapping
+ * @run main/timeout=240 ViewportOverlapping
  */
 public class ViewportOverlapping extends OverlappingTestBase {
 

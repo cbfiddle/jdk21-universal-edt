@@ -219,12 +219,12 @@ JNI_COCOA_ENTER(env);
 
     NSString * path = NormalizedPathNSStringFromJavaString(env, fileName);
     NSURL *url = [NSURL fileURLWithPath:path];
-    [ThreadUtilities performOnMainThreadWaiting:YES block:^(){
+ //   [ThreadUtilities performOnMainThreadWaiting:YES block:^(){
 
         returnValue  = [[NSFileManager defaultManager] trashItemAtURL:url
                                                      resultingItemURL:nil
                                                                 error:nil];
-    }];
+ //   }];
 
 JNI_COCOA_EXIT(env);
 

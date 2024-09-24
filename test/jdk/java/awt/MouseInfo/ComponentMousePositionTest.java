@@ -71,7 +71,7 @@ public class ComponentMousePositionTest {
                     / 2, p.y + button.getHeight() / 2);
             robot.waitForIdle();
 
-            Point pMousePosition = button.getMousePosition();
+            Point pMousePosition = getMousePosition(button);
             if (pMousePosition == null) {
                 throw new RuntimeException("Test failed: "
                         + "Component.getMousePosition() returned null result "
@@ -85,7 +85,7 @@ public class ComponentMousePositionTest {
                         + "result inside Component");
             }
 
-            pMousePosition = overlappedButton.getMousePosition();
+            pMousePosition = getMousePosition(overlappedButton);
             if (pMousePosition != null) {
                 throw new RuntimeException("Test failed: Overlapped component "
                         + "did not return null result when a pointer was inside"
@@ -97,7 +97,7 @@ public class ComponentMousePositionTest {
                     + POINT_WITHOUT_COMPONENTS.y);
             robot.waitForIdle();
 
-            pMousePosition = button.getMousePosition();
+            pMousePosition = getMousePosition(button);
             if (pMousePosition != null) {
                 throw new RuntimeException("FAILED: "
                         + "Component.getMousePosition() returned non-null "
@@ -108,6 +108,20 @@ public class ComponentMousePositionTest {
             throw new RuntimeException("FAILED: AWTException by Robot" + e);
         } finally {
             frame.dispose();
+        }
+    }
+
+    Point getMousePosition(Button b) {
+        try {
+            Point[] pointx = new Point[1];
+            java.awt.EventQueue.invokeAndWait(() -> {
+                pointx[0] = b.getMousePosition();
+            });
+            return pointx[0];
+        } catch (Exception e) {
+            System.err.println("invokeAndWait failed: " + e);
+            e.printStackTrace();
+            throw new RuntimeException(e);
         }
     }
 

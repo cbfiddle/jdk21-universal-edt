@@ -600,15 +600,21 @@ NSUInteger JavaModifiersToNsKeyModifiers(jint javaModifiers, BOOL isExtMods)
 }
 
 
-jint GetJavaMouseModifiers(NSUInteger modifierFlags)
+jint GetJavaMouseModifiers(NSUInteger modifierFlags, NSUInteger eventType)
 {
     // Mousing needs the key modifiers
     jint modifiers = NsKeyModifiersToJavaModifiers(modifierFlags, YES);
 
 
     /*
-     * Ask Quartz about mouse buttons state
+     * The event type may provide the most recent change to the button state
      */
+
+    if (eventType == NSEventTypeLeftMouseDown || eventType == NSEventTypeLeftMouseDragged) {
+        modifiers |= java_awt_event_InputEvent_BUTTON1_DOWN_MASK;
+    } else if (eventType == NSEventTypeRightMouseDown || eventType == NSEventTypeRightMouseDragged) {
+        modifiers |= java_awt_event_InputEvent_BUTTON3_DOWN_MASK;
+    }
 
     if (CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState,
                                  kCGMouseButtonLeft)) {
@@ -658,13 +664,13 @@ Java_java_awt_AWTEvent_nativeSetSource
  */
 JNIEXPORT jint JNICALL
 Java_sun_lwawt_macosx_NSEvent_nsToJavaModifiers
-(JNIEnv *env, jclass cls, jint modifierFlags)
+(JNIEnv *env, jclass cls, jint modifierFlags, jint eventType)
 {
     jint jmodifiers = 0;
 
 JNI_COCOA_ENTER(env);
 
-    jmodifiers = GetJavaMouseModifiers(modifierFlags);
+    jmodifiers = GetJavaMouseModifiers(modifierFlags, eventType);
 
 JNI_COCOA_EXIT(env);
 

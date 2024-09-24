@@ -517,9 +517,21 @@ public final class AWTAccessor {
      */
     public interface EventQueueAccessor {
         /**
+         * Create an event queue.
+         */
+        EventQueue createEventQueue(AppContext appContext);
+
+        /**
          * Gets the event dispatch thread.
          */
         Thread getDispatchThread(EventQueue eventQueue);
+
+        /**
+         * Pump currently available events. This method is for use by an external run loop.
+         * @param eventQueue The event queue that supplies the events.
+         * @param filter An optional event filter.
+         */
+        void pumpEvents(EventQueue eventQueue, EventFilter filter);
 
         /**
          * Checks if the current thread is EDT for the given EQ.
@@ -549,9 +561,9 @@ public final class AWTAccessor {
             throws InterruptedException, InvocationTargetException;
 
         /**
-         * Sets the delegate for the EventQueue used by FX/AWT single threaded mode
+         * Sets the delegate for the EventQueue used for single threaded integration with external runloops.
          */
-        void setFwDispatcher(EventQueue eventQueue, FwDispatcher dispatcher);
+        void setEventPump(EventQueue eventQueue, EventPump dispatcher);
 
         /**
          * Gets most recent event time in the EventQueue
@@ -782,6 +794,7 @@ public final class AWTAccessor {
      */
     public interface ToolkitAccessor {
         void setPlatformResources(ResourceBundle bundle);
+        EventPump getEventPump();
     }
 
     /*

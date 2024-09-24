@@ -55,13 +55,14 @@ public class NonEDT_GUI_Deadlock {
               }
            }
         };
+        theFrame.toBack();
+        theFrame.setLayout(new FlowLayout(FlowLayout.CENTER));
+        theFrame.setVisible(true);
+
         thKiller.setName("Killer thread");
         thKiller.start();
         Window w = new TestWindow(theFrame);
-        theFrame.toBack();
-        theFrame.setVisible(true);
 
-        theFrame.setLayout(new FlowLayout(FlowLayout.CENTER));
         EventQueue.invokeLater(new Runnable() {
            public void run() {
                bOK = true;

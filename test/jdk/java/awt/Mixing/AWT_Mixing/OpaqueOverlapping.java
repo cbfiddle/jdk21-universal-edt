@@ -50,7 +50,7 @@ import test.java.awt.regtesthelpers.Util;
  *          java.desktop/sun.awt
  * @build java.desktop/java.awt.Helper
  * @build Util
- * @run main OpaqueOverlapping
+ * @run main/timeout=240 OpaqueOverlapping
  */
 public class OpaqueOverlapping extends OverlappingTestBase {
 

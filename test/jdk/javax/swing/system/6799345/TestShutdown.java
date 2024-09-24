@@ -43,7 +43,7 @@ import sun.awt.*;
 
 public class TestShutdown
 {
-    private static AppContext targetAppContext;
+    //private static AppContext targetAppContext;
 
     private static JFrame f;
     private static JTextField tf;
@@ -65,7 +65,7 @@ public class TestShutdown
             Thread.sleep(1000);
         }
 
-        targetAppContext.dispose();
+        //targetAppContext.dispose();
 
         if (exceptionsOccurred)
         {
@@ -127,7 +127,7 @@ public class TestShutdown
         public void run()
         {
             SunToolkit stk = (SunToolkit)Toolkit.getDefaultToolkit();
-            targetAppContext = stk.createNewAppContext();
+            //targetAppContext = stk.createNewAppContext();
 
             // create and show frame and text field
             SwingUtilities.invokeLater(new Runnable()

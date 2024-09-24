@@ -49,7 +49,7 @@ JNIEXPORT void JNICALL Java_sun_lwawt_macosx_CFRetainedResource_nativeCFRelease
             }];
         } else {
             // could happen if we are embedded inside SWT/FX application,
-            [ThreadUtilities performOnMainThreadWaiting:NO block:^() {
+            [ThreadUtilities performOnMainThreadLater:^() {
                 CFRelease(jlong_to_ptr(ptr));
             }];
         }

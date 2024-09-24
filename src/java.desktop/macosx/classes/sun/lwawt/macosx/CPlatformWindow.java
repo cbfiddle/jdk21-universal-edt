@@ -1076,16 +1076,7 @@ public class CPlatformWindow extends CFRetainedResource implements PlatformWindo
 
     void flushBuffers() {
         if (isVisible() && !nativeBounds.isEmpty() && !isFullScreenMode) {
-            try {
-                LWCToolkit.invokeAndWait(new Runnable() {
-                    @Override
-                    public void run() {
-                        //Posting an empty to flush the EventQueue without blocking the main thread
-                    }
-                }, target);
-            } catch (InvocationTargetException e) {
-                e.printStackTrace();
-            }
+            LWCToolkit.flushEventQueue(target);
         }
     }
 
@@ -1106,12 +1097,12 @@ public class CPlatformWindow extends CFRetainedResource implements PlatformWindo
      * Callbacks from the AWTWindow and AWTView objc classes.
      *************************************************************/
     private void deliverWindowFocusEvent(boolean gained, CPlatformWindow opposite){
-        // Fix for 7150349: ignore "gained" notifications when the app is inactive.
-        if (gained && !((LWCToolkit)Toolkit.getDefaultToolkit()).isApplicationActive()) {
-            focusLogger.fine("the app is inactive, so the notification is ignored");
-            return;
-        }
-
+//        // Fix for 7150349: ignore "gained" notifications when the app is inactive.
+//        if (gained && !((LWCToolkit)Toolkit.getDefaultToolkit()).isApplicationActive()) {
+//            focusLogger.fine("the app is inactive, so the notification is ignored");
+//            return;
+//        }
+//
         LWWindowPeer oppositePeer = (opposite == null)? null : opposite.getPeer();
         responder.handleWindowFocusEvent(gained, oppositePeer);
     }

@@ -45,7 +45,12 @@ public class NonfocusableOwnerTest {
 
     public static void main(String[] args) {
         NonfocusableOwnerTest test = new NonfocusableOwnerTest();
-        test.start();
+        try {
+            EventQueue.invokeAndWait(() -> test.start());
+        } catch (InterruptedException e) {
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            System.err.println("Error: " + e.getTargetException());
+        }
     }
 
     public void start() {
@@ -107,7 +112,7 @@ public class NonfocusableOwnerTest {
     }
 
     void test2(Window owner, Window child1, Window child2) {
-        System.out.println("* * * STAGE 2 * * *\nWindow nowner: " + owner);
+        System.out.println("* * * STAGE 2 * * *\nWindow owner: " + owner);
 
         owner.setFocusableWindowState(false);
         owner.setVisible(true);

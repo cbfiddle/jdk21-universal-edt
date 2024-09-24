@@ -1587,7 +1587,7 @@ JNIEXPORT void JNICALL Java_sun_lwawt_macosx_CPlatformWindow_nativeSynthesizeMou
 {
     JNI_COCOA_ENTER(env);
 
-    [ThreadUtilities performOnMainThreadWaiting:NO block:^(){
+    [ThreadUtilities performOnMainThreadLater:^(){
         [AWTWindow synthesizeMouseEnteredExitedEventsForAllWindows];
     }];
 
@@ -1607,7 +1607,7 @@ JNI_COCOA_ENTER(env);
     if (eventType == NSEventTypeMouseEntered || eventType == NSEventTypeMouseExited) {
         NSWindow *nsWindow = OBJC(windowPtr);
 
-        [ThreadUtilities performOnMainThreadWaiting:NO block:^(){
+        [ThreadUtilities performOnMainThreadLater:^(){
             [AWTWindow synthesizeMouseEnteredExitedEvents:nsWindow withType:eventType];
         }];
     } else {

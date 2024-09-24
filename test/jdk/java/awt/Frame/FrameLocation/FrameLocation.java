@@ -57,9 +57,23 @@ public class FrameLocation {
             }
 
             // Emulate what happens when setGraphicsConfiguration() is called
-            synchronized (f.getTreeLock()) {
-                f.removeNotify();
-                f.addNotify();
+            try {
+                EventQueue.invokeAndWait(() -> {
+                    try {
+                        synchronized (f.getTreeLock()) {
+                            f.removeNotify();
+                            f.addNotify();
+                        }
+                    } catch (Exception e) {
+                        System.err.println("test failed: " + e);
+                        e.printStackTrace();
+                        throw new RuntimeException(e.getMessage());
+                    }
+                });
+            } catch (Exception e) {
+                System.err.println("invokeAndWait failed: " + e);
+                e.printStackTrace();
+                throw new RuntimeException(e);
             }
         }
 

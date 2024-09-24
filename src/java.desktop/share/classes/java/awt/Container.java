@@ -98,6 +98,7 @@ public class Container extends Component {
 
     private static final PlatformLogger log = PlatformLogger.getLogger("java.awt.Container");
     private static final PlatformLogger eventLog = PlatformLogger.getLogger("java.awt.event.Container");
+    private static final PlatformLogger runLoopLog = PlatformLogger.getLogger("java.awt.event.RunLoop");
 
     private static final Component[] EMPTY_ARRAY = new Component[0];
 
@@ -2889,6 +2890,7 @@ public class Container extends Component {
 
     transient Component modalComp;
     transient AppContext modalAppContext;
+    transient SecondaryLoop modalLoop;
 
     private void startLWModal() {
         // Store the app context on which this component is being shown.
@@ -2904,14 +2906,20 @@ public class Container extends Component {
             KeyboardFocusManager.getCurrentKeyboardFocusManager().
                 enqueueKeyEvents(time, predictedFocusOwner);
         }
-        // We have two mechanisms for blocking: 1. If we're on the
-        // EventDispatchThread, start a new event pump. 2. If we're
-        // on any other thread, call wait() on the treelock.
-        final Container nativeContainer;
+
+        runLoopLog.fine("Entering lightweight modal loop");
+
+        // A lightweight modal loop is basically a heavyweight modal loop with additional filtering using a filter that
+        // is effectively mutable (it is based on nativeContainer.modalComp, see LightweightDispatcher), presumably
+        // to support nested lightweight modal loops.
+
+        // Currently, there does not appear to be any way to create a nested lightweight modal loop.
+
+        Container nativeContainer;
         synchronized (getTreeLock()) {
             nativeContainer = getHeavyweightContainer();
             if (nativeContainer.modalComp != null) {
-                this.modalComp =  nativeContainer.modalComp;
+                this.modalComp = nativeContainer.modalComp;  // save the previous LW modal component in this component
                 nativeContainer.modalComp = this;
                 return;
             }
@@ -2920,33 +2928,37 @@ public class Container extends Component {
             }
         }
 
-        Runnable pumpEventsForHierarchy = () -> {
-            EventDispatchThread dispatchThread = (EventDispatchThread)Thread.currentThread();
-            dispatchThread.pumpEventsForHierarchy(() -> nativeContainer.modalComp != null,
-                    Container.this);
-        };
-
-        if (EventQueue.isDispatchThread()) {
-            SequencedEvent currentSequencedEvent =
-                KeyboardFocusManager.getCurrentKeyboardFocusManager().
-                getCurrentSequencedEvent();
-            if (currentSequencedEvent != null) {
-                currentSequencedEvent.dispose();
-            }
-
-            pumpEventsForHierarchy.run();
+        EventQueue eq = Toolkit.getEventQueue();
+        EventDispatchThread dispatcher = eq.getDispatchThread();
+        if (dispatcher != null && dispatcher.isUsingExternalEventPump()) {
+            nativeContainer.modalLoop = eq.createLightweightSecondaryLoop(this);
+            disposeCurrentSequencedEvent();
+            nativeContainer.modalLoop.enter();
         } else {
-            synchronized (getTreeLock()) {
-                Toolkit.getEventQueue().
-                    postEvent(new PeerEvent(this,
-                                pumpEventsForHierarchy,
-                                PeerEvent.PRIORITY_EVENT));
-                while (nativeContainer.modalComp != null)
-                {
-                    try {
-                        getTreeLock().wait();
-                    } catch (InterruptedException e) {
-                        break;
+            // We have two mechanisms for blocking: 1. If we're on the
+            // EventDispatchThread, start a new event pump. 2. If we're
+            // on any other thread, call wait() on the treelock.
+            Runnable pumpEventsForHierarchy = () -> {
+                if (dispatcher != null) {
+                    dispatcher.pumpEventsForHierarchy(() -> nativeContainer.modalComp != null, Container.this);
+                }
+            };
+
+            if (EventQueue.isDispatchThread()) {
+                disposeCurrentSequencedEvent();
+                pumpEventsForHierarchy.run();
+            } else {
+                synchronized (getTreeLock()) {
+                    Toolkit.getEventQueue().
+                            postEvent(new PeerEvent(this,
+                                    pumpEventsForHierarchy,
+                                    PeerEvent.PRIORITY_EVENT));
+                    while (nativeContainer.modalComp != null) {
+                        try {
+                            getTreeLock().wait();
+                        } catch (InterruptedException e) {
+                            break;
+                        }
                     }
                 }
             }
@@ -2957,29 +2969,55 @@ public class Container extends Component {
         }
     }
 
+    private void disposeCurrentSequencedEvent() {
+        SequencedEvent currentSequencedEvent =
+                KeyboardFocusManager.getCurrentKeyboardFocusManager().
+                        getCurrentSequencedEvent();
+        if (currentSequencedEvent != null) {
+            currentSequencedEvent.dispose();
+        }
+    }
+
     private void stopLWModal() {
+
+        runLoopLog.fine("Exiting lightweight modal loop");
+
         synchronized (getTreeLock()) {
             if (modalAppContext != null) {
                 Container nativeContainer = getHeavyweightContainer();
-                if(nativeContainer != null) {
-                    if (this.modalComp !=  null) {
-                        nativeContainer.modalComp = this.modalComp;
-                        this.modalComp = null;
+                if (nativeContainer != null) {
+                    if (modalComp != null) {
+                        // Not the top level LW modal loop
+                        SecondaryLoop loopToExit = nativeContainer.modalLoop;
+                        nativeContainer.modalComp = modalComp;
+                        modalComp = null;
+                        if (loopToExit != null) {
+                            loopToExit.exit();
+                        }
                         return;
                     }
-                    else {
-                        nativeContainer.modalComp = null;
+                    // exiting the top level LW modal loop
+                    nativeContainer.modalComp = null;
+                    EventQueue eq = Toolkit.getEventQueue();
+                    EventDispatchThread dispatcher = eq.getDispatchThread();
+                    if (dispatcher != null && dispatcher.isUsingExternalEventPump()) {
+                        if (nativeContainer.modalLoop != null) {
+                            SecondaryLoop loopToExit = nativeContainer.modalLoop;
+                            nativeContainer.modalLoop = null;
+                            loopToExit.exit();
+                            dispatcher.eventPosted(null);
+                        }
                     }
+                    // Wake up event dispatch thread on which the dialog was
+                    // initially shown
+                    SunToolkit.postEvent(modalAppContext,
+                            new PeerEvent(this,
+                                    new WakingRunnable(),
+                                    PeerEvent.PRIORITY_EVENT));
                 }
-                // Wake up event dispatch thread on which the dialog was
-                // initially shown
-                SunToolkit.postEvent(modalAppContext,
-                        new PeerEvent(this,
-                                new WakingRunnable(),
-                                PeerEvent.PRIORITY_EVENT));
+                EventQueue.invokeLater(new WakingRunnable());
+                getTreeLock().notifyAll();
             }
-            EventQueue.invokeLater(new WakingRunnable());
-            getTreeLock().notifyAll();
         }
     }
 

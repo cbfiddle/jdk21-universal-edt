@@ -26,8 +26,10 @@
 package jdk.swing.interop;
 
 import java.awt.SecondaryLoop;
+import java.awt.EventFilter;
 import java.awt.EventQueue;
-import sun.awt.FwDispatcher;
+import java.awt.EventPump;
+
 import sun.awt.AWTAccessor;
 
 /**
@@ -52,10 +54,14 @@ public abstract class DispatcherWrapper {
     public abstract SecondaryLoop createSecondaryLoop();
 
     public static void setFwDispatcher(EventQueue eventQueue, DispatcherWrapper dispatcher) {
-        AWTAccessor.getEventQueueAccessor().setFwDispatcher(eventQueue, dispatcher.fwd);
+        AWTAccessor.getEventQueueAccessor().setEventPump(eventQueue, dispatcher.fwd);
     }
 
-    private class DispatcherProxy implements FwDispatcher {
+    private class DispatcherProxy implements EventPump
+    {
+        @Override
+        public void eventsPosted() {
+        }
 
         @Override
         public boolean isDispatchThread() {
@@ -68,7 +74,7 @@ public abstract class DispatcherWrapper {
         }
 
         @Override
-        public SecondaryLoop createSecondaryLoop() {
+        public SecondaryLoop createSecondaryLoop(EventFilter filter) {
             return DispatcherWrapper.this.createSecondaryLoop();
         }
     }

@@ -100,7 +100,7 @@ AWT_ASSERT_APPKIT_THREAD;
 }
 
 + (void)performOnMainThreadWaiting:(BOOL)wait block:(void (^)())block {
-    if ([NSThread isMainThread] && wait == YES) {
+    if ([NSThread isMainThread]) {
         block();
     } else {
         if (wait == YES) {
@@ -112,12 +112,21 @@ AWT_ASSERT_APPKIT_THREAD;
     }
 }
 
++ (void)performOnMainThreadLater:(void (^)())block {
+    void (^blockCopy)(void) = Block_copy(block);
+    [self performOnMainThread:@selector(invokeBlockCopy:) on:self withObject:blockCopy waitUntilDone:NO];
+}
+
 + (void)performOnMainThread:(SEL)aSelector on:(id)target withObject:(id)arg waitUntilDone:(BOOL)wait {
-    if ([NSThread isMainThread] && wait == YES) {
+    if ([NSThread isMainThread]) {
         [target performSelector:aSelector withObject:arg];
     } else {
         [target performSelectorOnMainThread:aSelector withObject:arg waitUntilDone:wait modes:javaModes];
     }
+}
+
++ (void)performOnMainThreadLater:(SEL)aSelector on:(id)target withObject:(id)arg {
+    [target performSelectorOnMainThread:aSelector withObject:arg waitUntilDone:NO modes:javaModes];
 }
 
 + (NSString*)javaRunLoopMode {

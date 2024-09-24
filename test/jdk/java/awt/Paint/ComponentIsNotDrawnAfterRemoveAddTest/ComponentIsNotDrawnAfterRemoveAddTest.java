@@ -99,14 +99,20 @@ public class ComponentIsNotDrawnAfterRemoveAddTest {
             for (int i = 0; i < 5; i++) {
                 System.err.println(String.format("Test iteration #%d:", i));
 
-                frame.remove(panel);
-                frame.invalidate();
-                frame.validate();
-                frame.add(panel);
+                java.awt.EventQueue.invokeAndWait(() -> {
+                    frame.remove(panel);
+                    frame.invalidate();
+                    frame.validate();
+                    frame.add(panel);
+                });
 
                 doSleep(1500);
                 checkTestableComponents();
             }
+        } catch (Exception e) {
+            System.err.println("Failed: " + e);
+            e.printStackTrace();
+            throw new RuntimeException(e);
         } finally {
             frame.dispose();
         }
@@ -185,6 +191,17 @@ public class ComponentIsNotDrawnAfterRemoveAddTest {
     }
 
     public static void main(String[] args) {
-        new ComponentIsNotDrawnAfterRemoveAddTest().runTest();
+        try {
+            ComponentIsNotDrawnAfterRemoveAddTest[] test
+                = new ComponentIsNotDrawnAfterRemoveAddTest[1];
+            java.awt.EventQueue.invokeAndWait(() -> {
+                test[0] = new ComponentIsNotDrawnAfterRemoveAddTest();
+            });
+            test[0].runTest();
+        } catch (Exception e) {
+            System.err.println("invokeAndWait failed: " + e);
+            e.printStackTrace();
+            throw new RuntimeException(e);
+        }
     }
 }

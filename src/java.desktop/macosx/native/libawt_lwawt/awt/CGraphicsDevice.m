@@ -234,7 +234,7 @@ Java_sun_awt_CGraphicsDevice_nativeGetScreenInsets
     __block NSRect visibleFrame = NSZeroRect;
 JNI_COCOA_ENTER(env);
 
-    [ThreadUtilities performOnMainThreadWaiting:YES block:^(){
+//    [ThreadUtilities performOnMainThreadWaiting:YES block:^(){
         NSArray *screens = [NSScreen screens];
         for (NSScreen *screen in screens) {
             NSDictionary *screenInfo = [screen deviceDescription];
@@ -245,7 +245,7 @@ JNI_COCOA_ENTER(env);
                 break;
             }
         }
-    }];
+//    }];
     // Convert between Cocoa's coordinate system and Java.
     jint bottom = visibleFrame.origin.y - frame.origin.y;
     jint top = frame.size.height - visibleFrame.size.height - bottom;
@@ -289,7 +289,7 @@ Java_sun_awt_CGraphicsDevice_nativeSetDisplayMode
     __block CGError retCode = kCGErrorSuccess;
     if (closestMatch != NULL) {
         CGDisplayModeRetain(closestMatch);
-        [ThreadUtilities performOnMainThreadWaiting:YES block:^(){
+//        [ThreadUtilities performOnMainThreadWaiting:YES block:^(){
             CGDisplayConfigRef config;
             retCode = CGBeginDisplayConfiguration(&config);
             if (retCode == kCGErrorSuccess) {
@@ -297,7 +297,7 @@ Java_sun_awt_CGraphicsDevice_nativeSetDisplayMode
                 retCode = CGCompleteDisplayConfiguration(config, kCGConfigureForAppOnly);
             }
             CGDisplayModeRelease(closestMatch);
-        }];
+//        }];
     } else {
         JNU_ThrowIllegalArgumentException(env, "Invalid display mode");
     }
@@ -382,7 +382,7 @@ Java_sun_awt_CGraphicsDevice_nativeGetScaleFactor
 
 JNI_COCOA_ENTER(env);
 
-    [ThreadUtilities performOnMainThreadWaiting:YES block:^(){
+//    [ThreadUtilities performOnMainThreadWaiting:YES block:^(){
         NSArray *screens = [NSScreen screens];
         for (NSScreen *screen in screens) {
             NSDictionary *screenInfo = [screen deviceDescription];
@@ -394,7 +394,7 @@ JNI_COCOA_ENTER(env);
                 break;
             }
         }
-    }];
+//    }];
 
 JNI_COCOA_EXIT(env);
     return ret;

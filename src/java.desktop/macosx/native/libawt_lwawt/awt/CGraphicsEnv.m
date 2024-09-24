@@ -110,7 +110,7 @@ static void displaycb_handle
 {
     if (flags == kCGDisplayBeginConfigurationFlag) return;
 
-    [ThreadUtilities performOnMainThreadWaiting:NO block:^() {
+    [ThreadUtilities performOnMainThreadLater:^() {
 
         JNIEnv *env = [ThreadUtilities getJNIEnvUncached];
         jobject cgeRef = (jobject)userInfo;

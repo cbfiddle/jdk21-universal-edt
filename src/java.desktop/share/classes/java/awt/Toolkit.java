@@ -1401,6 +1401,12 @@ public abstract class Toolkit {
                     public void setPlatformResources(ResourceBundle bundle) {
                         Toolkit.setPlatformResources(bundle);
                     }
+
+                    @Override
+                    public EventPump getEventPump()
+                    {
+                        return Toolkit.getDefaultToolkit().getEventPump();
+                    }
                 });
 
         java.security.AccessController.doPrivileged(
@@ -1908,6 +1914,14 @@ public abstract class Toolkit {
     static boolean enabledOnToolkit(long eventMask) {
         return (enabledOnToolkitMask & eventMask) != 0;
         }
+
+    /**
+     * Return the external event pump used by this toolkit, if any.
+     * @return the external event pump, or null if none.
+     */
+    protected EventPump getEventPump() {
+        return null;
+    }
 
     synchronized int countAWTEventListeners(long eventMask) {
         int ci = 0;

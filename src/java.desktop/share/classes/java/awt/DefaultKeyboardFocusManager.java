@@ -66,6 +66,7 @@ import sun.util.logging.PlatformLogger;
  */
 public class DefaultKeyboardFocusManager extends KeyboardFocusManager {
     private static final PlatformLogger focusLog = PlatformLogger.getLogger("java.awt.focus.DefaultKeyboardFocusManager");
+    private static final PlatformLogger eventLog = PlatformLogger.getLogger("java.awt.event.EventDispatchThread");
 
     // null weak references to not create too many objects
     private static final WeakReference<Window> NULL_WINDOW_WR =
@@ -285,6 +286,9 @@ public class DefaultKeyboardFocusManager extends KeyboardFocusManager {
             new DefaultKeyboardFocusManagerSentEvent(e, myAppContext);
 
         if (myAppContext == targetAppContext) {
+            if (eventLog.isLoggable(PlatformLogger.Level.FINEST)) {
+                eventLog.finest("Dispatching synthetic event: " + e);
+            }
             se.dispatch();
         } else {
             if (targetAppContext.isDisposed()) {
@@ -292,14 +296,15 @@ public class DefaultKeyboardFocusManager extends KeyboardFocusManager {
             }
             SunToolkit.postEvent(targetAppContext, se);
             if (EventQueue.isDispatchThread()) {
-                if (Thread.currentThread() instanceof EventDispatchThread) {
-                    EventDispatchThread edt = (EventDispatchThread)
-                            Thread.currentThread();
-                    edt.pumpEvents(SentEvent.ID, new Conditional() {
-                        public boolean evaluate() {
-                            return !se.dispatched && !targetAppContext.isDisposed();
-                        }
-                    });
+                EventDispatchThread edt = Toolkit.getEventQueue().getDispatchThread();
+                if (edt != null) {
+                    if (!edt.isUsingExternalEventPump()) {
+                        edt.pumpEvents(SentEvent.ID, new Conditional() {
+                            public boolean evaluate() {
+                                return !se.dispatched && !targetAppContext.isDisposed();
+                            }
+                        });
+                    }
                 } else {
                     if (fxAppThreadIsDispatchThread) {
                         Thread fxCheckDispatchThread = new Thread() {

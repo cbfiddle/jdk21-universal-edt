@@ -175,17 +175,31 @@ public class CtrlASCII extends Frame implements KeyListener {
         robot.setAutoWaitForIdle(true);
         robot.setAutoDelay(100);
 
-        setLayout(new BorderLayout());
+        try {
+            java.awt.EventQueue.invokeAndWait(() -> {
+                try {
+                    setLayout(new BorderLayout());
 
-        setSize(400, 300);
-        setLocationRelativeTo(null);
-        setVisible(true);
+                    setSize(400, 300);
+                    setLocationRelativeTo(null);
+                    setVisible(true);
 
-        String original = "0123456789";
-        tf = new TextField(original, 20);
-        this.add(tf);
-        tf.addKeyListener(this);
-        validate();
+                    String original = "0123456789";
+                    tf = new TextField(original, 20);
+                    this.add(tf);
+                    tf.addKeyListener(this);
+                    validate();
+                } catch (Exception e) {
+                    System.err.println("Failed: " + e);
+                    e.printStackTrace();
+                    throw new RuntimeException(e.getMessage());
+                }
+            });
+        } catch (Exception e) {
+            System.err.println("invokeAndWait failed: " + e);
+            e.printStackTrace();
+            throw new RuntimeException(e);
+        }
 
         robot.waitForIdle();
         robot.delay(1000);

@@ -286,6 +286,13 @@ public final class AppContext {
      */
     @SuppressWarnings("removal")
     public static AppContext getAppContext() {
+        if (SunToolkit.isSingleThreaded()) {
+            if (mainAppContext == null) {
+                initMainAppContext();
+            }
+            return mainAppContext;
+        }
+
         // we are standalone app, return the main app context
         if (numAppContexts.get() == 1 && mainAppContext != null) {
             return mainAppContext;

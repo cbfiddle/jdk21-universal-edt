@@ -69,6 +69,7 @@ import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.io.Serial;
 import java.io.Serializable;
+import java.lang.reflect.*;
 import java.security.AccessControlContext;
 import java.security.AccessController;
 import java.util.Collections;
@@ -502,6 +503,15 @@ public abstract class Component implements ImageObserver, MenuContainer,
     static final Object LOCK = new AWTTreeLock();
     static class AWTTreeLock {}
 
+    /**
+     * Return the shared tree lock.
+     * @param source The source of the request, for logging.
+     * @return the shared tree lock.
+     */
+    public static Object getSharedTreeLock(Object source) {
+        return LOCK;
+    }
+
     /*
      * The component's AccessControlContext.
      */
@@ -852,12 +862,12 @@ public abstract class Component implements ImageObserver, MenuContainer,
      * is actually changing
      */
     int getBoundsOp() {
-        assert Thread.holdsLock(getTreeLock());
+        assert Thread.holdsLock(getTreeLock()) || SunToolkit.isSingleThreaded();
         return boundsOp;
     }
 
     void setBoundsOp(int op) {
-        assert Thread.holdsLock(getTreeLock());
+        assert Thread.holdsLock(getTreeLock()) || SunToolkit.isSingleThreaded();
         if (op == ComponentPeer.RESET_OPERATION) {
             boundsOp = ComponentPeer.DEFAULT_OPERATION;
         } else
@@ -1231,7 +1241,7 @@ public abstract class Component implements ImageObserver, MenuContainer,
     }
 
     final void checkTreeLock() {
-        if (!Thread.holdsLock(getTreeLock())) {
+        if (!Thread.holdsLock(getTreeLock()) && !SunToolkit.isSingleThreaded()) {
             throw new IllegalStateException("This function should be called while holding treeLock");
         }
     }
@@ -1629,6 +1639,20 @@ public abstract class Component implements ImageObserver, MenuContainer,
      * @since 1.2
      */
     public void enableInputMethods(boolean enable) {
+        if (!EventQueue.isDispatchThread()) {
+            try {
+                EventQueue.invokeAndWait(() -> internalEnableInputMethods(enable));
+            } catch (InterruptedException e) {
+                System.err.println("Component.enableInputMethods interrupted");
+            } catch (InvocationTargetException e) {
+                System.err.println("Component.enableInputMethods failed: " + e.getTargetException());
+            }
+        } else {
+            internalEnableInputMethods(enable);
+        }
+    }
+
+    private void internalEnableInputMethods(boolean enable) {
         if (enable) {
             if ((eventMask & AWTEvent.INPUT_METHODS_ENABLED_MASK) != 0)
                 return;

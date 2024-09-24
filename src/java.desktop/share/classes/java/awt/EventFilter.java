@@ -24,7 +24,10 @@
  */
 package java.awt;
 
-interface EventFilter {
+/**
+ * A filter used in AWT event dispatch.
+ */
+public interface EventFilter {
 
     /**
      * Enumeration for possible values for {@code acceptEvent(AWTEvent ev)} method.
@@ -57,5 +60,10 @@ interface EventFilter {
         ACCEPT_IMMEDIATELY
     }
 
+    /**
+     * Indicate whether an event should be accepted.
+     * @param ev The event.
+     * @return true if the event is accepted.
+     */
     FilterAction acceptEvent(AWTEvent ev);
 }

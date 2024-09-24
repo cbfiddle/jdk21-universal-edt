@@ -175,7 +175,7 @@ JNIEXPORT void JNICALL Java_sun_lwawt_macosx_CInputMethod_nativeNotifyPeer
 JNI_COCOA_ENTER(env);
     AWTView *view = (AWTView *)jlong_to_ptr(nativePeer);
     jobject inputMethodRef = (*env)->NewGlobalRef(env, inputMethod);
-    [ThreadUtilities performOnMainThreadWaiting:NO block:^(){
+    [ThreadUtilities performOnMainThreadLater:^(){
         [CInputMethod _nativeNotifyPeerWithView:view inputMethod:inputMethodRef];
     }];
 
@@ -194,7 +194,7 @@ JNIEXPORT void JNICALL Java_sun_lwawt_macosx_CInputMethod_nativeEndComposition
 JNI_COCOA_ENTER(env);
    AWTView *view = (AWTView *)jlong_to_ptr(nativePeer);
 
-   [ThreadUtilities performOnMainThreadWaiting:NO block:^(){
+   [ThreadUtilities performOnMainThreadLater:^(){
         [CInputMethod _nativeEndComposition:view];
     }];
 

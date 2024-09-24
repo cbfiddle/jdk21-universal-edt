@@ -50,6 +50,7 @@ import java.awt.dnd.DragSourceListener;
 import java.awt.event.AWTEventListener;
 import java.awt.event.InputEvent;
 import java.awt.event.MouseEvent;
+import java.lang.reflect.InvocationTargetException;
 
 
 public class NoTargetNoDragExitTest {
@@ -105,7 +106,7 @@ public class NoTargetNoDragExitTest {
             startPoint.translate(50, 50);
             Point endPoint = new Point(startPoint.x + 100, startPoint.y + 100);
 
-            Util.waitForInit();
+            Util.invokeAndWait(() -> Util.waitForInit());
 
             if (!Util.pointInComponent(robot, startPoint, frame)) {
                 System.err.println("WARNING: Could not locate " + frame +
@@ -194,21 +195,35 @@ class Util implements AWTEventListener {
         return c == comp;
     }
 
-    public static void waitForInit() throws InterruptedException {
-        final Frame f = new Frame() {
-                public void paint(Graphics g) {
-                    dispose();
-                    synchronized (SYNC_LOCK) {
-                        SYNC_LOCK.notifyAll();
-                    }
-                }
-            };
-        f.setBounds(600, 400, 200, 200);
-        synchronized (SYNC_LOCK) {
-            f.setVisible(true);
-            SYNC_LOCK.wait(PAINT_TIMEOUT);
+    public static void invokeAndWait(Runnable r) {
+        try {
+            EventQueue.invokeAndWait(r);
+        } catch (InterruptedException e) {
+            throw new RuntimeException("Interrupted!");
+        } catch (InvocationTargetException e) {
+            throw new RuntimeException("Exception: " + e.getTargetException());
         }
-        tk.sync();
+    }
+
+    public static void waitForInit() {
+        try {
+            final Frame f = new Frame() {
+                    public void paint(Graphics g) {
+                        dispose();
+                        synchronized (SYNC_LOCK) {
+                            SYNC_LOCK.notifyAll();
+                        }
+                    }
+                };
+            f.setBounds(600, 400, 200, 200);
+            synchronized (SYNC_LOCK) {
+                f.setVisible(true);
+                SYNC_LOCK.wait(PAINT_TIMEOUT);
+            }
+            tk.sync();
+        } catch (InterruptedException e) {
+            throw new RuntimeException("Interrupted!");
+        }
     }
 
     public static int sign(int n) {
